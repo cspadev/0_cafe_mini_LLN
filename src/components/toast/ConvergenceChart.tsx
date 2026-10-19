@@ -34,7 +34,7 @@ export function ConvergenceChart({ stats }: { stats: Stats }) {
           {t >= 1000 ? `${t / 1000}k` : t}
         </text>
       ))}
-      <text x={W - PAD.r} y={H - 8} textAnchor="end" className="fill-ink/50 text-[8px]">
+      <text x={W - PAD.r} y={PAD.t + 12} textAnchor="end" className="fill-ink/50 text-[8px]">
         N (log)
       </text>
       <path d={path(stats.ham.series)} className="fill-none stroke-ham" strokeWidth={2.5} strokeLinejoin="round" />

@@ -250,10 +250,10 @@ export function ToastGame() {
         if (gx > ax - bw / 2 && gx < ax + bw / 2 && gy > ay - bh && gy < ay + 4) {
           if (a.kind === "student") {
             a.hitT = 1.2;
-            bubbles.current.push({ text: STUDENT_LINES[Math.floor(Math.random() * STUDENT_LINES.length)], x: ax, y: ay - bh, t: 1.3 });
+            bubbles.current.push({ text: STUDENT_LINES[Math.floor(Math.random() * STUDENT_LINES.length)]!, x: ax, y: ay - bh, t: 1.3 });
           } else if (a.kind === "chef" && !f.bonus) {
             a.hitT = 1.6;
-            bubbles.current.push({ text: CHEF_LINES[Math.floor(Math.random() * CHEF_LINES.length)], x: ax, y: ay - bh, t: 1.6, big: true });
+            bubbles.current.push({ text: CHEF_LINES[Math.floor(Math.random() * CHEF_LINES.length)]!, x: ax, y: ay - bh, t: 1.6, big: true });
             bursts.current.push({ left: 20, every: 0.06, acc: 0, fromSky: false, around: { x: a.x, y: a.y } });
             flash("+20 TOAST BARRAGE!");
           } else if (a.kind === "truck" && !f.bonus) {
@@ -428,7 +428,7 @@ export function ToastGame() {
     paused.current = true;
     holding.current = false;
     setAnswer({});
-    setMilestone(crossed[crossed.length - 1]);
+    setMilestone(crossed[crossed.length - 1]!);
   }
 
   function submitMilestone() {
@@ -490,7 +490,8 @@ export function ToastGame() {
   const N = s.jam.n + s.ham.n;
   const jr = rate(s.jam);
   const hr = rate(s.ham);
-  const lastGap = journal.length ? Math.abs(journal[journal.length - 1].ham - journal[journal.length - 1].jam) : null;
+  const lastJ = journal.at(-1);
+  const lastGap = lastJ ? Math.abs(lastJ.ham - lastJ.jam) : null;
 
   return (
     <div className="flex min-h-screen flex-col bg-paper text-ink lg:h-screen lg:flex-row">
@@ -646,7 +647,7 @@ function StatCard({ label, tone, pct, n, down }: { label: string; tone: Kind; pc
   );
 }
 
-function Q({ label, options, value, onPick }: { label: string; options: string[]; value?: string; onPick: (v: string) => void }) {
+function Q({ label, options, value, onPick }: { label: string; options: string[]; value: string | undefined; onPick: (v: string) => void }) {
   return (
     <div className="mt-3">
       <p className="text-sm font-semibold">{label}</p>
