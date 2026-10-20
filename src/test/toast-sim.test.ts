@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createOdds, canOpenNotebook, createStats, record, rollDown, rate } from "@/lib/toast-sim";
+import { createOdds, canOpenNotebook, createStats, createTruckVisit, advanceTruck, rewardTruckHit, record, rollDown, rate } from "@/lib/toast-sim";
+import { TOAST_CONFIG } from "@/lib/toast-config";
 
 describe("toast probabilities", () => {
   it("generates different secret odds for new experiments", () => {
@@ -31,5 +32,37 @@ describe("toast probabilities", () => {
   });
   it("reports appear only in lab sessions", () => {
     expect(canOpenNotebook(false, 0, 0, false)).toBe(false);
+  });
+});
+
+describe("truck visits", () => {
+  it("awards 50 bonus toasts for a truck hit", () => {
+    const truck = createTruckVisit(() => 0);
+    truck.phase = "parked";
+    expect(rewardTruckHit(truck)).toBe(50);
+    expect(rewardTruckHit(truck)).toBe(0);
+  });
+  it("waits offscreen, enters from the right and reverses along the same path", () => {
+    const truck = createTruckVisit(() => 0);
+    expect(truck.phase).toBe("waiting");
+    expect(truck.x).toBeGreaterThan(1);
+    expect(rewardTruckHit(truck)).toBe(0);
+    advanceTruck(truck, truck.remaining);
+    expect(truck.phase).toBe("entering");
+    const startX = truck.x;
+    advanceTruck(truck, 1);
+    expect(truck.x).toBeLessThan(startX);
+    advanceTruck(truck, 30);
+    expect(truck.phase).toBe("parked");
+    expect(truck.x).toBe(TOAST_CONFIG.truck.stopX);
+    advanceTruck(truck, truck.remaining);
+    expect(truck.phase).toBe("leaving");
+    const parkedX = truck.x;
+    advanceTruck(truck, 1);
+    expect(truck.x).toBeGreaterThan(parkedX);
+    advanceTruck(truck, 30, () => 0);
+    expect(truck.phase).toBe("waiting");
+    expect(truck.remaining).toBe(45);
+    expect(truck.x).toBe(startX);
   });
 });

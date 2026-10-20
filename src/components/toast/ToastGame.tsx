@@ -7,7 +7,10 @@ import chefSrc from "@/assets/chef.png";
 import truckSrc from "@/assets/truck.png";
 import s1Src from "@/assets/student1.png";
 import s2Src from "@/assets/student2.png";
-import { MILESTONES, createOdds, canOpenNotebook, createStats, rate, record, rollDown, type Kind, type Stats } from "@/lib/toast-sim";
+import s3Src from "@/assets/student3.png";
+import s4Src from "@/assets/student4.png";
+import { MILESTONES, createOdds, canOpenNotebook, createStats, createTruckVisit, advanceTruck, rewardTruckHit, rate, record, rollDown, type Kind, type Stats } from "@/lib/toast-sim";
+import { TOAST_CONFIG } from "@/lib/toast-config";
 import { ConvergenceChart } from "./ConvergenceChart";
 import { Button } from "@/components/ui/button";
 import { BookOpen, Gamepad2, RotateCcw, Volume2, VolumeX, Droplets, X, Eye } from "lucide-react";
@@ -45,6 +48,7 @@ const STUDENT_LINES = ["EWW!", "MY HOODIE!", "WHO DID THAT?!", "Not again…", "
 const CHEF_LINES = ["MON DIEU!", "MY TRAY!", "AAARGH!", "SACRÉ TOAST!"];
 const depth = (y: number) => 0.35 + 0.9 * y;
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+const studentImages = { student1: s1Src, student2: s2Src, student3: s3Src, student4: s4Src };
 
 type Journal = { n: number; which: string; gap: string; jam: number; ham: number };
 
@@ -71,13 +75,11 @@ export function ToastGame() {
   const paused = useRef(false);
   const seen = useRef(new Set<number>());
   const size = useRef({ w: 800, h: 600, dpr: 1 });
+  const truckVisit = useRef(createTruckVisit());
   const actors = useRef<Actor[]>([
-    { kind: "truck", img: truckSrc, x: 0.75, y: 0.57, vx: 0.022, hitT: 0, say: "", min: 0.58, max: 1.15 },
+    { kind: "truck", img: truckSrc, x: TOAST_CONFIG.truck.outsideX, y: TOAST_CONFIG.truck.pathY, vx: -TOAST_CONFIG.truck.speed, hitT: 0, say: "", min: TOAST_CONFIG.truck.stopX, max: TOAST_CONFIG.truck.outsideX },
     { kind: "chef", img: chefSrc, x: 0.45, y: 0.6, vx: 0.07, hitT: 0, say: "", min: 0.25, max: 0.8 },
-    { kind: "student", img: s1Src, x: 0.3, y: 0.48, vx: 0.05, hitT: 0, say: "", min: 0.12, max: 0.9 },
-    { kind: "student", img: s2Src, x: 0.7, y: 0.72, vx: -0.06, hitT: 0, say: "", min: 0.3, max: 0.92 },
-    { kind: "student", img: s1Src, x: 0.55, y: 0.85, vx: -0.04, hitT: 0, say: "", min: 0.35, max: 0.95 },
-    { kind: "student", img: s2Src, x: 0.2, y: 0.4, vx: 0.035, hitT: 0, say: "", min: 0.1, max: 0.6 },
+    ...TOAST_CONFIG.students.map((student): Actor => ({ kind: "student", img: studentImages[student.image], x: student.x, y: student.y, vx: student.speed, hitT: 0, say: "", min: student.min, max: student.max })),
   ]);
 
   const [, setTick] = useState(0);
@@ -91,7 +93,9 @@ export function ToastGame() {
   const handGeom = useCallback(() => {
     const { w, h } = size.current;
     const hs = Math.min(h * 0.62, w * 0.5);
-    return { hs, hx: -hs * 0.12, hy: h - hs * 0.82, tx: -hs * 0.12 + hs * 0.6, ty: h - hs * 0.82 + hs * 0.36, ts: hs * 0.5 };
+    const hx = -hs * 0.12;
+    const hy = h - hs * 0.82;
+    return { hs, hx, hy, tx: hx + hs * 0.79, ty: hy + hs * 0.25, ts: hs * 0.38 };
   }, []);
 
   const launch = useCallback(
@@ -135,7 +139,7 @@ export function ToastGame() {
 
   // load images
   useEffect(() => {
-    for (const src of [jamSrc, hamSrc, handSrc, chefSrc, truckSrc, s1Src, s2Src]) {
+    for (const src of [jamSrc, hamSrc, handSrc, chefSrc, truckSrc, ...Object.values(studentImages)]) {
       const im = new Image();
       im.src = src;
       imgs.current[src] = im;
@@ -186,11 +190,12 @@ export function ToastGame() {
     const actorBox = (a: Actor) => {
       const { w, h } = size.current;
       const s = depth(a.y);
+      const personHeight = Math.min(h * TOAST_CONFIG.people.heightOfScene, w * TOAST_CONFIG.people.heightOfWidth) * s;
       if (a.kind === "truck") {
-        const bw = Math.min(w * 0.23, h * 0.36) * s;
-        return { bw, bh: bw * (555 / 998), s };
+        const bh = personHeight * TOAST_CONFIG.truck.heightInStudents;
+        return { bw: bh * TOAST_CONFIG.truck.widthToHeight, bh, s };
       }
-      const bh = h * (a.kind === "chef" ? 0.2 : 0.18) * s;
+      const bh = personHeight * (a.kind === "chef" ? TOAST_CONFIG.people.chefScale : 1);
       return { bw: bh * (a.kind === "chef" ? 0.72 : 0.55), bh, s };
     };
 
@@ -264,6 +269,7 @@ export function ToastGame() {
 
       // hit tests
       for (const a of actors.current) {
+        if (a.kind === "truck" && truckVisit.current.phase === "waiting") continue;
         const { bw, bh } = actorBox(a);
         const ax = a.x * w;
         const ay = a.y * h;
@@ -276,14 +282,16 @@ export function ToastGame() {
             a.hitT = 1.6;
             audio.current?.play("chef");
             bubbles.current.push({ text: CHEF_LINES[Math.floor(Math.random() * CHEF_LINES.length)] ?? "SACRÉ TOAST!", x: ax, y: ay - bh, t: 1.6, big: true });
-            bursts.current.push({ left: 20, every: 0.06, acc: 0, fromSky: false, around: { x: a.x, y: a.y } });
-            flash("+20 TOAST BARRAGE!");
+            bursts.current.push({ left: TOAST_CONFIG.bonuses.chef, every: 0.06, acc: 0, fromSky: false, around: { x: a.x, y: a.y } });
+            flash(`+${TOAST_CONFIG.bonuses.chef} TOAST BARRAGE!`);
           } else if (a.kind === "truck" && !f.bonus) {
+            const bonus = rewardTruckHit(truckVisit.current);
+            if (!bonus) break;
             a.hitT = 2;
             audio.current?.play("truck");
             bubbles.current.push({ text: "HONK!! CARGO DOOR!", x: ax, y: ay - bh, t: 2, big: true });
-            bursts.current.push({ left: 300, every: 0.008, acc: 0, fromSky: true });
-            flash("+300 BULK BREAD DROP!");
+            bursts.current.push({ left: bonus, every: TOAST_CONFIG.truck.dropIntervalSeconds, acc: 0, fromSky: true });
+            flash(`+${bonus} BULK BREAD DROP!`);
           }
           break;
         }
@@ -316,14 +324,17 @@ export function ToastGame() {
         }
         bursts.current = bursts.current.filter((b) => b.left > 0);
         // actors
+        advanceTruck(truckVisit.current, dt);
         for (const a of actors.current) {
           const panic = a.hitT > 0 ? 2.5 : 1;
-          if (a.kind !== "truck" || a.hitT <= 0) a.x += a.vx * dt * panic;
           if (a.kind === "truck") {
-            if (a.x > a.max) a.x = a.min - 0.16;
-          } else if (a.x < a.min || a.x > a.max) {
-            a.vx *= -1;
-            a.x = Math.min(a.max, Math.max(a.min, a.x));
+            a.x = truckVisit.current.x;
+          } else {
+            a.x += a.vx * dt * panic;
+            if (a.x < a.min || a.x > a.max) {
+              a.vx *= -1;
+              a.x = Math.min(a.max, Math.max(a.min, a.x));
+            }
           }
           a.hitT = Math.max(0, a.hitT - dt);
         }
@@ -350,6 +361,7 @@ export function ToastGame() {
 
       const sorted = [...actors.current].sort((a, b) => a.y - b.y);
       for (const a of sorted) {
+        if (a.kind === "truck" && truckVisit.current.phase === "waiting") continue;
         const im = imgs.current[a.img];
         if (!im?.complete) continue;
         const { bw, bh } = actorBox(a);
@@ -363,7 +375,7 @@ export function ToastGame() {
         ctx.translate(ax, ay);
         if (a.hitT > 0 && a.kind !== "truck") ctx.rotate(Math.sin(now / 40) * 0.12);
         const bob = a.kind === "truck" ? 0 : Math.abs(Math.sin(now / 180 + a.x * 20)) * 3;
-        if (a.vx < 0 && a.kind !== "truck") ctx.scale(-1, 1);
+        if (a.vx < 0) ctx.scale(-1, 1);
         ctx.filter = "drop-shadow(3px 4px 0 rgba(0,0,0,0.35))";
         if (a.kind === "truck") ctx.drawImage(im, 21, 38, 998, 555, -bw / 2, -bh, bw, bh);
         else ctx.drawImage(im, -bw / 2, -bh - bob, bw, bh);
@@ -394,18 +406,32 @@ export function ToastGame() {
       // hand + held toast
       const g = handGeom();
       const himg = imgs.current[handSrc];
+      if (himg?.complete) ctx.drawImage(himg, g.hx, g.hy, g.hs, g.hs);
       if (hand.current.cooldown <= 0 || holding.current) {
         const tim = imgs.current[hand.current.kind === "jam" ? jamSrc : hamSrc];
         if (tim?.complete && hand.current.cooldown <= 0) {
           ctx.save();
           ctx.translate(g.tx, g.ty);
-          ctx.rotate(-0.25);
+          ctx.rotate(0.14);
           ctx.filter = "drop-shadow(4px 8px 6px rgba(0,0,0,0.4))";
           ctx.drawImage(tim, -g.ts / 2, -g.ts / 2, g.ts, g.ts);
           ctx.restore();
         }
       }
-      if (himg?.complete) ctx.drawImage(himg, g.hx, g.hy, g.hs, g.hs);
+      // Only the thumb sits in front of the toast; the palm/index finger stay behind it.
+      if (himg?.complete && hand.current.cooldown <= 0) {
+        ctx.save();
+        ctx.translate(g.hx, g.hy);
+        ctx.scale(g.hs, g.hs);
+        ctx.beginPath();
+        ctx.moveTo(0.52, 0.43);
+        ctx.bezierCurveTo(0.62, 0.40, 0.70, 0.32, 0.79, 0.35);
+        ctx.bezierCurveTo(0.86, 0.42, 0.70, 0.50, 0.57, 0.56);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(himg, 0, 0, 1, 1);
+        ctx.restore();
+      }
 
       // bubbles
       for (const b of bubbles.current) {
@@ -480,7 +506,7 @@ export function ToastGame() {
   };
   const startHold = () => {
     if (paused.current) return;
-    audio.current?.unlock();
+    void audio.current?.unlock();
     launch(false);
     holding.current = true;
     holdAcc.current = -0.25;
@@ -518,14 +544,17 @@ export function ToastGame() {
     seen.current.clear();
     flights.current = [];
     bursts.current = [];
+    truckVisit.current = createTruckVisit();
+    const truck = actors.current.find((actor) => actor.kind === "truck");
+    if (truck) { truck.x = TOAST_CONFIG.truck.outsideX; truck.hitT = 0; }
     setJournal([]);
     setRevealed(false);
     const g = ground.current;
     g?.getContext("2d")?.clearRect(0, 0, g.width, g.height);
   };
   const hose = () => {
-    audio.current?.unlock();
-    audio.current?.play("hose");
+    const sound = audio.current;
+    if (sound) void sound.unlock().then(() => sound.play("hose"));
     const g = ground.current;
     g?.getContext("2d")?.clearRect(0, 0, g.width, g.height);
   };
@@ -564,7 +593,7 @@ export function ToastGame() {
               <Button size="sm" variant="ghost" aria-pressed={labMode} className={labMode ? "bg-ink text-paper hover:bg-ink/90 hover:text-paper" : ""} onClick={() => { lab.current = true; setLabMode(true); resetAll(); }}><BookOpen />Lab session</Button>
             </div>
             {labMode && <Button size="icon" variant="ghost" title="Lab report" aria-label="Lab report" onClick={() => { holding.current = false; reportRequested.current = true; flash(flights.current.length || bursts.current.length ? "LET THE TOAST SETTLE…" : "LAB REPORT"); }}><BookOpen /></Button>}
-            <Button size="icon" variant="ghost" title={soundOn ? "Mute sounds" : "Enable sounds"} aria-label={soundOn ? "Mute sounds" : "Enable sounds"} onClick={() => { const enabled = !soundOn; setSoundOn(enabled); if (audio.current) { audio.current.enabled = enabled; if (enabled) { audio.current.unlock(); audio.current.play("drop"); } } }}>{soundOn ? <Volume2 /> : <VolumeX />}</Button>
+            <Button size="icon" variant="ghost" title={soundOn ? "Mute sounds" : "Enable sounds"} aria-label={soundOn ? "Mute sounds" : "Enable sounds"} onClick={() => { const enabled = !soundOn; setSoundOn(enabled); const sound = audio.current; if (sound) { sound.enabled = enabled; if (enabled) void sound.unlock().then(() => sound.play("drop")); } }}>{soundOn ? <Volume2 /> : <VolumeX />}</Button>
             <Button size="icon" variant="ghost" title="Hose down courtyard" aria-label="Hose down courtyard" onClick={hose}><Droplets /></Button>
             <Button size="icon" variant="ghost" title="New experiment" aria-label="New experiment" onClick={resetAll}><RotateCcw /></Button>
           </nav>
