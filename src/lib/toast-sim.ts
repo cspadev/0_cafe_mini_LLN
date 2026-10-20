@@ -1,7 +1,17 @@
 export type Kind = "jam" | "ham";
 
-/** Secret probability that each toast lands topping-side DOWN. */
-export const P_DOWN: Record<Kind, number> = { jam: 0.53, ham: 0.68 };
+export type Odds = Record<Kind, number>;
+
+/** Secret odds stay fixed within one experiment, but change on the next. */
+export function createOdds(rng: () => number = Math.random): Odds {
+  const low = Math.round(35 + rng() * 35) / 100;
+  const high = Math.min(0.9, low + Math.round(8 + rng() * 14) / 100);
+  return rng() < 0.5 ? { jam: low, ham: high } : { jam: high, ham: low };
+}
+
+export function canOpenNotebook(lab: boolean, burstCount: number, flightCount: number, holding: boolean) {
+  return lab && burstCount === 0 && flightCount === 0 && !holding;
+}
 
 export const MILESTONES = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000];
 
@@ -12,8 +22,8 @@ export function createStats(): Stats {
   return { jam: { n: 0, down: 0, series: [] }, ham: { n: 0, down: 0, series: [] } };
 }
 
-export function rollDown(kind: Kind, rng: () => number = Math.random): boolean {
-  return rng() < P_DOWN[kind];
+export function rollDown(kind: Kind, odds: Odds, rng: () => number = Math.random): boolean {
+  return rng() < odds[kind];
 }
 
 /** Records one drop; keeps every point early on, then thins the series so charts stay light. */
