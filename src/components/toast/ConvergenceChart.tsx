@@ -3,10 +3,10 @@ import jamSrc from "@/assets/toast-jam.png";
 import hamSrc from "@/assets/toast-ham.png";
 
 const W = 360;
-const H = 210;
 const PAD = { l: 34, r: 10, t: 10, b: 26 };
 
 export function ConvergenceChart({ stats, compact = false }: { stats: Stats; compact?: boolean }) {
+  const H = compact ? 110 : 210;
   const nMax = Math.max(20, stats.jam.n, stats.ham.n);
   const maxPow = Math.ceil(Math.log10(nMax));
   const xMaxLog = Math.max(maxPow, 1.3);
