@@ -7,8 +7,11 @@ import chefSrc from "@/assets/chef.png";
 import truckSrc from "@/assets/truck.png";
 import s1Src from "@/assets/student1.png";
 import s2Src from "@/assets/student2.png";
-import { MILESTONES, P_DOWN, createStats, rate, record, rollDown, type Kind, type Stats } from "@/lib/toast-sim";
+import { MILESTONES, createOdds, canOpenNotebook, createStats, rate, record, rollDown, type Kind, type Stats } from "@/lib/toast-sim";
 import { ConvergenceChart } from "./ConvergenceChart";
+import { Button } from "@/components/ui/button";
+import { BookOpen, Gamepad2, RotateCcw, Volume2, VolumeX, Droplets, X, Eye } from "lucide-react";
+import { ToastAudio } from "@/lib/toast-audio";
 
 type Actor = {
   kind: "student" | "chef" | "truck";
@@ -50,6 +53,13 @@ export function ToastGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgs = useRef<Record<string, HTMLImageElement>>({});
   const stats = useRef<Stats>(createStats());
+  const odds = useRef(createOdds());
+  const audio = useRef<ToastAudio | null>(null);
+  const lab = useRef(false);
+  const [labMode, setLabMode] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const reportRequested = useRef(false);
+  const [soundOn, setSoundOn] = useState(true);
   const flights = useRef<Flight[]>([]);
   const bubbles = useRef<Bubble[]>([]);
   const bursts = useRef<Burst[]>([]);
@@ -62,7 +72,7 @@ export function ToastGame() {
   const seen = useRef(new Set<number>());
   const size = useRef({ w: 800, h: 600, dpr: 1 });
   const actors = useRef<Actor[]>([
-    { kind: "truck", img: truckSrc, x: 0.78, y: 0.36, vx: 0.015, hitT: 0, say: "", min: 0.62, max: 0.86 },
+    { kind: "truck", img: truckSrc, x: 0.75, y: 0.57, vx: 0.022, hitT: 0, say: "", min: 0.58, max: 1.15 },
     { kind: "chef", img: chefSrc, x: 0.45, y: 0.6, vx: 0.07, hitT: 0, say: "", min: 0.25, max: 0.8 },
     { kind: "student", img: s1Src, x: 0.3, y: 0.48, vx: 0.05, hitT: 0, say: "", min: 0.12, max: 0.9 },
     { kind: "student", img: s2Src, x: 0.7, y: 0.72, vx: -0.06, hitT: 0, say: "", min: 0.3, max: 0.92 },
@@ -88,7 +98,7 @@ export function ToastGame() {
     (bonus: boolean, opts?: { around?: { x: number; y: number }; fromSky?: boolean }) => {
       const { w, h } = size.current;
       const kind: Kind = bonus ? (Math.random() < 0.5 ? "jam" : "ham") : hand.current.kind;
-      const down = rollDown(kind);
+      const down = rollDown(kind, odds.current);
       const g = handGeom();
       let tx: number, ty: number;
       if (opts?.around) {
@@ -108,6 +118,7 @@ export function ToastGame() {
         dur: rnd(0.9, 1.25), halfTurns: turns * 2 + (down ? 1 : 0), spin: rnd(-3, 3), bonus,
       });
       if (!bonus) {
+        audio.current?.play("drop");
         const next: Kind = Math.random() < 0.5 ? "jam" : "ham";
         hand.current = { kind: next, cooldown: 0.12 };
         setHandKind(next);
@@ -116,6 +127,11 @@ export function ToastGame() {
     },
     [handGeom],
   );
+
+  useEffect(() => {
+    audio.current = new ToastAudio();
+    return () => audio.current?.close();
+  }, []);
 
   // load images
   useEffect(() => {
@@ -131,8 +147,9 @@ export function ToastGame() {
 
   // resize
   useEffect(() => {
-    const el = sceneRef.current!;
-    const cv = canvasRef.current!;
+    const el = sceneRef.current;
+    const cv = canvasRef.current;
+    if (!el || !cv) return;
     const ro = new ResizeObserver(() => {
       const r = el.getBoundingClientRect();
       const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -143,7 +160,8 @@ export function ToastGame() {
       const g = document.createElement("canvas");
       g.width = cv.width;
       g.height = cv.height;
-      const gc = g.getContext("2d")!;
+      const gc = g.getContext("2d");
+      if (!gc) return;
       if (old) gc.drawImage(old, 0, 0, g.width, g.height);
       ground.current = g;
     });
@@ -159,8 +177,9 @@ export function ToastGame() {
 
   // main loop
   useEffect(() => {
-    const cv = canvasRef.current!;
-    const ctx = cv.getContext("2d")!;
+    const cv = canvasRef.current;
+    const ctx = cv?.getContext("2d");
+    if (!cv || !ctx) return;
     let raf = 0;
     let last = performance.now();
 
@@ -168,8 +187,8 @@ export function ToastGame() {
       const { w, h } = size.current;
       const s = depth(a.y);
       if (a.kind === "truck") {
-        const bw = w * 0.3 * s;
-        return { bw, bh: bw * 0.62, s };
+        const bw = Math.min(w * 0.23, h * 0.36) * s;
+        return { bw, bh: bw * (555 / 998), s };
       }
       const bh = h * (a.kind === "chef" ? 0.2 : 0.18) * s;
       return { bw: bh * (a.kind === "chef" ? 0.72 : 0.55), bh, s };
@@ -241,6 +260,7 @@ export function ToastGame() {
         gc.restore();
       }
       record(stats.current, f.kind, f.down);
+      audio.current?.play("splat");
 
       // hit tests
       for (const a of actors.current) {
@@ -250,14 +270,17 @@ export function ToastGame() {
         if (gx > ax - bw / 2 && gx < ax + bw / 2 && gy > ay - bh && gy < ay + 4) {
           if (a.kind === "student") {
             a.hitT = 1.2;
-            bubbles.current.push({ text: STUDENT_LINES[Math.floor(Math.random() * STUDENT_LINES.length)]!, x: ax, y: ay - bh, t: 1.3 });
+            audio.current?.play("student");
+            bubbles.current.push({ text: STUDENT_LINES[Math.floor(Math.random() * STUDENT_LINES.length)] ?? "EWW!", x: ax, y: ay - bh, t: 1.3 });
           } else if (a.kind === "chef" && !f.bonus) {
             a.hitT = 1.6;
-            bubbles.current.push({ text: CHEF_LINES[Math.floor(Math.random() * CHEF_LINES.length)]!, x: ax, y: ay - bh, t: 1.6, big: true });
+            audio.current?.play("chef");
+            bubbles.current.push({ text: CHEF_LINES[Math.floor(Math.random() * CHEF_LINES.length)] ?? "SACRÉ TOAST!", x: ax, y: ay - bh, t: 1.6, big: true });
             bursts.current.push({ left: 20, every: 0.06, acc: 0, fromSky: false, around: { x: a.x, y: a.y } });
             flash("+20 TOAST BARRAGE!");
           } else if (a.kind === "truck" && !f.bonus) {
             a.hitT = 2;
+            audio.current?.play("truck");
             bubbles.current.push({ text: "HONK!! CARGO DOOR!", x: ax, y: ay - bh, t: 2, big: true });
             bursts.current.push({ left: 300, every: 0.008, acc: 0, fromSky: true });
             flash("+300 BULK BREAD DROP!");
@@ -265,7 +288,6 @@ export function ToastGame() {
           break;
         }
       }
-      checkMilestone();
     };
 
     const frame = (now: number) => {
@@ -297,7 +319,9 @@ export function ToastGame() {
         for (const a of actors.current) {
           const panic = a.hitT > 0 ? 2.5 : 1;
           if (a.kind !== "truck" || a.hitT <= 0) a.x += a.vx * dt * panic;
-          if (a.x < a.min || a.x > a.max) {
+          if (a.kind === "truck") {
+            if (a.x > a.max) a.x = a.min - 0.16;
+          } else if (a.x < a.min || a.x > a.max) {
             a.vx *= -1;
             a.x = Math.min(a.max, Math.max(a.min, a.x));
           }
@@ -315,6 +339,7 @@ export function ToastGame() {
         }
         for (const b of bubbles.current) b.t -= dt;
         bubbles.current = bubbles.current.filter((b) => b.t > 0);
+        checkMilestone();
       }
 
       // draw
@@ -336,11 +361,12 @@ export function ToastGame() {
         ctx.ellipse(ax, ay, bw * 0.45, bw * 0.12, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.translate(ax, ay);
-        if (a.hitT > 0) ctx.rotate(Math.sin(now / 40) * 0.12);
+        if (a.hitT > 0 && a.kind !== "truck") ctx.rotate(Math.sin(now / 40) * 0.12);
         const bob = a.kind === "truck" ? 0 : Math.abs(Math.sin(now / 180 + a.x * 20)) * 3;
         if (a.vx < 0 && a.kind !== "truck") ctx.scale(-1, 1);
         ctx.filter = "drop-shadow(3px 4px 0 rgba(0,0,0,0.35))";
-        ctx.drawImage(im, -bw / 2, -bh - bob, bw, bh);
+        if (a.kind === "truck") ctx.drawImage(im, 21, 38, 998, 555, -bw / 2, -bh, bw, bh);
+        else ctx.drawImage(im, -bw / 2, -bh - bob, bw, bh);
         ctx.restore();
       }
 
@@ -421,33 +447,40 @@ export function ToastGame() {
   }
 
   function checkMilestone() {
+    if (paused.current || !canOpenNotebook(lab.current, bursts.current.length, flights.current.length, holding.current)) return;
+    if (reportRequested.current) {
+      reportRequested.current = false;
+      paused.current = true;
+      setReportOpen(true);
+      return;
+    }
     const N = stats.current.jam.n + stats.current.ham.n;
     const crossed = MILESTONES.filter((m) => N >= m && !seen.current.has(m));
-    if (!crossed.length || paused.current) return;
+    const latest = crossed.at(-1);
+    if (latest == null) return;
     crossed.forEach((m) => seen.current.add(m));
     paused.current = true;
-    holding.current = false;
     setAnswer({});
-    setMilestone(crossed[crossed.length - 1]!);
+    setMilestone(N);
   }
 
   function submitMilestone() {
-    if (milestone == null) return;
-    setJournal((j) => [
-      ...j,
-      { n: milestone, which: answer.which!, gap: answer.gap!, jam: rate(stats.current.jam), ham: rate(stats.current.ham) },
-    ]);
+    if (milestone == null || !answer.which || !answer.gap) return;
+    const entry = { n: milestone, which: answer.which, gap: answer.gap, jam: rate(stats.current.jam), ham: rate(stats.current.ham) };
+    setJournal((j) => [...j, entry]);
     setMilestone(null);
     paused.current = false;
   }
 
   // controls
   const onPointerMove = (e: React.PointerEvent) => {
-    const r = sceneRef.current!.getBoundingClientRect();
+    const r = sceneRef.current?.getBoundingClientRect();
+    if (!r) return;
     aim.current = { x: (e.clientX - r.left) / r.width, y: Math.max(0.28, (e.clientY - r.top) / r.height) };
   };
   const startHold = () => {
     if (paused.current) return;
+    audio.current?.unlock();
     launch(false);
     holding.current = true;
     holdAcc.current = -0.25;
@@ -457,6 +490,7 @@ export function ToastGame() {
   };
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLElement && e.target.closest("button, input, select, textarea")) return;
       if (e.code === "Space" && !e.repeat) {
         e.preventDefault();
         startHold();
@@ -472,7 +506,15 @@ export function ToastGame() {
   });
 
   const resetAll = () => {
+    odds.current = createOdds();
     stats.current = createStats();
+    paused.current = false;
+    holding.current = false;
+    reportRequested.current = false;
+    bubbles.current = [];
+    setMilestone(null);
+    setReportOpen(false);
+    setBanner(null);
     seen.current.clear();
     flights.current = [];
     bursts.current = [];
@@ -482,6 +524,8 @@ export function ToastGame() {
     g?.getContext("2d")?.clearRect(0, 0, g.width, g.height);
   };
   const hose = () => {
+    audio.current?.unlock();
+    audio.current?.play("hose");
     const g = ground.current;
     g?.getContext("2d")?.clearRect(0, 0, g.width, g.height);
   };
@@ -494,9 +538,9 @@ export function ToastGame() {
   const lastGap = lastJ ? Math.abs(lastJ.ham - lastJ.jam) : null;
 
   return (
-    <div className="flex min-h-screen flex-col bg-paper text-ink lg:h-screen lg:flex-row">
+    <div className="flex h-dvh min-h-[480px] flex-col overflow-hidden bg-paper text-ink">
       {/* Scene */}
-      <div className="relative min-h-[60vh] flex-1 overflow-hidden lg:min-h-0">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         <div
           ref={sceneRef}
           className="absolute inset-0 cursor-crosshair touch-none select-none bg-cover bg-center"
@@ -512,14 +556,19 @@ export function ToastGame() {
           <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
         </div>
 
-        <div className="pointer-events-none absolute left-4 top-4 flex flex-col gap-2">
-          <h1 className="font-display -rotate-2 bg-ink px-3 py-1 text-2xl leading-none text-paper shadow-cut sm:text-3xl">
-            MURPHY'S TOAST LAB
-          </h1>
-          <p className="max-w-xs rotate-1 bg-paper px-2 py-1 text-xs font-semibold shadow-cut">
-            Click to drop one. Hold (or hold Space) to keep dropping. Aim with your cursor. Hit the chef or the bread truck for bonuses.
-          </p>
-        </div>
+        <header className="absolute inset-x-0 top-0 flex flex-wrap items-center justify-between gap-2 bg-paper/95 px-3 py-2 sm:px-5">
+          <h1 className="font-display text-sm sm:text-xl">MURPHY'S TOAST LAB</h1>
+          <nav className="flex items-center gap-1" aria-label="Game controls">
+            <div className="mr-1 flex border border-ink/20 rounded-md">
+              <Button size="sm" variant="ghost" aria-pressed={!labMode} className={!labMode ? "bg-ink text-paper hover:bg-ink/90 hover:text-paper" : ""} onClick={() => { lab.current = false; setLabMode(false); resetAll(); }}><Gamepad2 />Play</Button>
+              <Button size="sm" variant="ghost" aria-pressed={labMode} className={labMode ? "bg-ink text-paper hover:bg-ink/90 hover:text-paper" : ""} onClick={() => { lab.current = true; setLabMode(true); resetAll(); }}><BookOpen />Lab session</Button>
+            </div>
+            {labMode && <Button size="icon" variant="ghost" title="Lab report" aria-label="Lab report" onClick={() => { holding.current = false; reportRequested.current = true; flash(flights.current.length || bursts.current.length ? "LET THE TOAST SETTLE…" : "LAB REPORT"); }}><BookOpen /></Button>}
+            <Button size="icon" variant="ghost" title={soundOn ? "Mute sounds" : "Enable sounds"} aria-label={soundOn ? "Mute sounds" : "Enable sounds"} onClick={() => { const enabled = !soundOn; setSoundOn(enabled); if (audio.current) { audio.current.enabled = enabled; if (enabled) { audio.current.unlock(); audio.current.play("drop"); } } }}>{soundOn ? <Volume2 /> : <VolumeX />}</Button>
+            <Button size="icon" variant="ghost" title="Hose down courtyard" aria-label="Hose down courtyard" onClick={hose}><Droplets /></Button>
+            <Button size="icon" variant="ghost" title="New experiment" aria-label="New experiment" onClick={resetAll}><RotateCcw /></Button>
+          </nav>
+        </header>
 
         <div className="pointer-events-none absolute bottom-4 right-4 rotate-2 bg-paper px-3 py-2 text-sm font-bold shadow-cut">
           In hand:{" "}
@@ -528,7 +577,7 @@ export function ToastGame() {
 
         {banner && (
           <div className="pointer-events-none absolute inset-x-0 top-1/3 flex justify-center">
-            <div className="font-display animate-in zoom-in -rotate-3 border-4 border-ink bg-mustard px-6 py-3 text-3xl text-ink shadow-cut sm:text-5xl">
+            <div className="font-display animate-in zoom-in -rotate-3 border-4 border-ink bg-mustard px-6 py-3 max-w-[90vw] text-center text-xl text-ink shadow-cut sm:text-4xl">
               {banner}
             </div>
           </div>
@@ -536,7 +585,7 @@ export function ToastGame() {
 
         {milestone != null && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-ink/50 p-4">
-            <div className="w-full max-w-md -rotate-1 border-4 border-ink bg-paper p-5 shadow-cut">
+            <div role="dialog" aria-modal="true" aria-label="Lab notebook" className="max-h-[90%] w-full max-w-md overflow-y-auto border-4 border-ink bg-paper p-5 shadow-cut">
               <p className="font-display text-sm text-jam">CHECKPOINT · N = {milestone}</p>
               <h2 className="font-display mt-1 text-2xl leading-tight">Lab notebook time!</h2>
               <p className="mt-2 text-sm">
@@ -564,85 +613,43 @@ export function ToastGame() {
                   {lastGap != null && ` Gap now: ${(Math.abs(hr - jr) * 100).toFixed(1)} pts (was ${(lastGap * 100).toFixed(1)}).`}
                 </p>
               )}
-              <button
+              <Button
                 disabled={!answer.which || !answer.gap}
                 onClick={submitMilestone}
                 className="font-display mt-4 w-full border-4 border-ink bg-jam py-2 text-lg text-paper shadow-cut transition hover:-translate-y-0.5 disabled:opacity-40"
               >
                 LOG IT & KEEP DROPPING
-              </button>
+              </Button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Stats panel */}
-      <aside className="w-full shrink-0 overflow-y-auto border-t-4 border-ink bg-paper p-4 lg:w-[400px] lg:border-l-4 lg:border-t-0">
-        <div className="flex items-baseline justify-between">
-          <h2 className="font-display text-xl">Running average</h2>
-          <span className="font-display text-sm">N = {N.toLocaleString()}</span>
+      <footer className="flex h-[118px] shrink-0 items-center gap-3 border-t-2 border-ink/20 bg-paper px-3 sm:gap-6 sm:px-5" aria-label="Live experiment averages">
+        <div className="w-[110px] shrink-0 sm:w-[160px]">
+          <p className="font-display text-sm">N = {N.toLocaleString()}</p>
+          <p className="text-[10px] font-semibold text-ink/60">TOPPING-DOWN</p>
+          {(["jam", "ham"] as const).map((kind) => <div key={kind} className="flex items-center gap-1.5">
+            <img src={kind === "jam" ? jamSrc : hamSrc} alt={`${kind} toast`} className="h-7 w-7 object-contain" />
+            <span className={`text-xs font-bold ${kind === "jam" ? "text-jam" : "text-plot-ham"}`}>{kind === "jam" ? "Jam" : "Ham"}</span>
+            <span className="ml-auto text-sm font-bold tabular-nums">{s[kind].n ? (rate(s[kind]) * 100).toFixed(1) + "%" : "—"}</span>
+          </div>)}
         </div>
-        <p className="text-xs text-ink/70">% of drops landing topping-side DOWN</p>
-
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <StatCard label="Jam toast" tone="jam" pct={jr} n={s.jam.n} down={s.jam.down} />
-          <StatCard label="Ham toast" tone="ham" pct={hr} n={s.ham.n} down={s.ham.down} />
-        </div>
-
-        <div className="mt-3 border-2 border-ink bg-card p-2">
+        <div className="min-w-0 flex-1"><ConvergenceChart stats={s} compact /></div>
+      </footer>
+      {labMode && reportOpen && <div className="absolute inset-0 z-30 flex items-center justify-center bg-ink/50 p-4">
+        <section role="dialog" aria-modal="true" aria-label="Lab session report" className="max-h-[90dvh] w-full max-w-xl overflow-y-auto border-4 border-ink bg-paper p-5 shadow-cut">
+          <div className="flex items-center justify-between"><h2 className="font-display text-xl">Lab session report</h2><Button size="icon" variant="ghost" aria-label="Close report" onClick={() => { setReportOpen(false); paused.current = false; }}><X /></Button></div>
+          <p className="mt-2 text-sm font-bold">{N.toLocaleString()} landings · Jam {(jr * 100).toFixed(1)}% · Ham {(hr * 100).toFixed(1)}%</p>
           <ConvergenceChart stats={s} />
-          <div className="flex justify-center gap-4 text-xs font-bold">
-            <span className="text-jam">━ Jam</span>
-            <span className="text-ham">━ Ham</span>
-          </div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button onClick={hose} className="border-2 border-ink bg-card px-3 py-1 text-xs font-bold shadow-cut-sm hover:bg-mustard/30">
-            Hose down courtyard
-          </button>
-          <button onClick={resetAll} className="border-2 border-ink bg-card px-3 py-1 text-xs font-bold shadow-cut-sm hover:bg-mustard/30">
-            New experiment
-          </button>
-          {N >= 1000 && !revealed && (
-            <button onClick={() => setRevealed(true)} className="border-2 border-ink bg-mustard px-3 py-1 text-xs font-bold shadow-cut-sm">
-              Reveal true odds
-            </button>
-          )}
-        </div>
-        {revealed && (
-          <p className="mt-2 border-2 border-ink bg-mustard/20 p-2 text-xs">
-            The secret odds: Jam <b>{P_DOWN.jam * 100}%</b>, Ham <b>{P_DOWN.ham * 100}%</b>. Your {N.toLocaleString()} drops estimated{" "}
-            {(jr * 100).toFixed(1)}% and {(hr * 100).toFixed(1)}%. Big samples get close!
-          </p>
-        )}
-        {N < 1000 && <p className="mt-2 text-[11px] text-ink/60">Reach N = 1,000 to unlock the true odds.</p>}
-
-        <h3 className="font-display mt-5 text-base">Hypothesis journal</h3>
-        {journal.length === 0 ? (
-          <p className="text-xs text-ink/60">Checkpoints at N = {MILESTONES.slice(0, 4).join(", ")}…</p>
-        ) : (
-          <ul className="mt-1 space-y-1 text-xs">
-            {journal.map((j) => (
-              <li key={j.n} className="border-b border-ink/15 pb-1">
-                <b>N={j.n}:</b> guessed <b>{j.which}</b>, gap <b>{j.gap.toLowerCase()}</b> · Jam {(j.jam * 100).toFixed(0)}% / Ham {(j.ham * 100).toFixed(0)}%
-              </li>
-            ))}
-          </ul>
-        )}
-      </aside>
-    </div>
-  );
-}
-
-function StatCard({ label, tone, pct, n, down }: { label: string; tone: Kind; pct: number; n: number; down: number }) {
-  return (
-    <div className={`border-2 border-ink p-2 shadow-cut-sm ${tone === "jam" ? "bg-jam/10" : "bg-ham/15"}`}>
-      <p className={`text-xs font-bold uppercase ${tone === "jam" ? "text-jam" : "text-ham"}`}>{label}</p>
-      <p className="font-display text-3xl leading-none">{n ? (pct * 100).toFixed(1) : "—"}%</p>
-      <p className="text-[11px] text-ink/70">
-        {down} down / {n} drops
-      </p>
+          <div className="flex justify-center gap-4 text-xs font-bold"><span className="text-jam">━ Jam</span><span className="text-plot-ham">┄ Ham</span></div>
+          <h3 className="font-display mt-5 text-base">Hypothesis journal</h3>
+          {journal.length === 0 ? <p className="mt-2 text-sm text-ink/60">No observations recorded yet.</p> : <ul className="mt-2 space-y-2 text-sm">{journal.map((j) => <li key={j.n} className="border-b border-ink/15 pb-2"><b>N={j.n}:</b> {j.which} · gap {j.gap.toLowerCase()} · Jam {(j.jam * 100).toFixed(1)}% / Ham {(j.ham * 100).toFixed(1)}%</li>)}</ul>}
+          {N >= 1000 && !revealed && <Button variant="outline" className="mt-4" onClick={() => setRevealed(true)}><Eye />Reveal true odds</Button>}
+          {revealed && <p className="mt-3 bg-mustard/20 p-3 text-sm">This experiment's secret odds: Jam <b>{Math.round(odds.current.jam * 100)}%</b>, Ham <b>{Math.round(odds.current.ham * 100)}%</b>.</p>}
+          <Button className="mt-4 w-full bg-ink text-paper hover:bg-ink/90" onClick={() => { setReportOpen(false); paused.current = false; }}>Back to the courtyard</Button>
+        </section>
+      </div>}
     </div>
   );
 }
@@ -653,13 +660,15 @@ function Q({ label, options, value, onPick }: { label: string; options: string[]
       <p className="text-sm font-semibold">{label}</p>
       <div className="mt-1 flex flex-wrap gap-2">
         {options.map((o) => (
-          <button
+          <Button
             key={o}
+            variant="outline"
+            aria-pressed={value === o}
             onClick={() => onPick(o)}
             className={`border-2 border-ink px-3 py-1 text-xs font-bold ${value === o ? "bg-ink text-paper" : "bg-card hover:bg-mustard/30"}`}
           >
             {o}
-          </button>
+          </Button>
         ))}
       </div>
     </div>
