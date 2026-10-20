@@ -1,10 +1,12 @@
 import type { Stats } from "@/lib/toast-sim";
+import jamSrc from "@/assets/toast-jam.png";
+import hamSrc from "@/assets/toast-ham.png";
 
 const W = 360;
 const H = 210;
 const PAD = { l: 34, r: 10, t: 10, b: 26 };
 
-export function ConvergenceChart({ stats }: { stats: Stats }) {
+export function ConvergenceChart({ stats, compact = false }: { stats: Stats; compact?: boolean }) {
   const nMax = Math.max(20, stats.jam.n, stats.ham.n);
   const maxPow = Math.ceil(Math.log10(nMax));
   const xMaxLog = Math.max(maxPow, 1.3);
@@ -16,7 +18,7 @@ export function ConvergenceChart({ stats }: { stats: Stats }) {
   for (let k = 0; k <= Math.floor(xMaxLog); k++) ticks.push(10 ** k);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Running average of topping-down landings">
+    <svg viewBox={`0 0 ${W} ${H}`} className={compact ? "h-[96px] w-full" : "w-full"} role="img" aria-label="Running average of topping-down landings">
       <rect x={x(1)} y={PAD.t} width={x(20) - x(1)} height={H - PAD.t - PAD.b} className="fill-mustard/25" />
       <text x={x(1) + 4} y={PAD.t + 12} className="fill-ink/60 text-[9px] font-bold uppercase tracking-wider">
         wild zone N&lt;20
@@ -37,8 +39,13 @@ export function ConvergenceChart({ stats }: { stats: Stats }) {
       <text x={W - PAD.r} y={PAD.t + 12} textAnchor="end" className="fill-ink/50 text-[8px]">
         N (log)
       </text>
-      <path d={path(stats.ham.series)} className="fill-none stroke-ham" strokeWidth={2.5} strokeLinejoin="round" />
+      <path d={path(stats.ham.series)} className="fill-none stroke-plot-ham" strokeWidth={2.5} strokeDasharray="6 3" strokeLinejoin="round" />
       <path d={path(stats.jam.series)} className="fill-none stroke-jam" strokeWidth={2.5} strokeLinejoin="round" />
+      {(["jam", "ham"] as const).map((kind) => {
+        const point = stats[kind].series.at(-1);
+        if (!point) return null;
+        return <image key={kind} href={kind === "jam" ? jamSrc : hamSrc} x={Math.min(W - 25, x(point[0]) - 10)} y={y(point[1]) - 10} width={20} height={20} />;
+      })}
     </svg>
   );
 }
