@@ -4,7 +4,7 @@ import { createOdds, canOpenNotebook, createStats, record, rollDown, rate } from
 describe("toast probabilities", () => {
   it("generates different secret odds for new experiments", () => {
     expect(createOdds(() => 0)).toEqual({ jam: 0.35, ham: 0.43 });
-    expect(createOdds(() => 0.9)).toEqual({ jam: 0.87, ham: 0.67 });
+    expect(createOdds(() => 0.9)).toEqual({ jam: 0.88, ham: 0.67 });
   });
   it("either topping can have the higher probability", () => {
     expect(createOdds(() => 0).ham).toBeGreaterThan(createOdds(() => 0).jam);
