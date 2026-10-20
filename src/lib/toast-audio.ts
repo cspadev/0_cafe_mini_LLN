@@ -11,12 +11,13 @@ export class ToastAudio {
   async unlock() {
     try {
       if (!this.context || this.context.state === "closed") {
-        const browser = window as Window & { webkitAudioContext?: typeof AudioContext };
+        const browser = window as Window & { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
         const Audio = browser.AudioContext ?? browser.webkitAudioContext;
         if (!Audio) return;
         this.context = new Audio();
       }
-      if (this.context.state !== "running") await this.context.resume();
+      const ctx = this.context;
+      if (ctx && ctx.state !== "running") await ctx.resume();
     } catch {
       // Audio support/device failures must not interrupt the experiment.
     }
