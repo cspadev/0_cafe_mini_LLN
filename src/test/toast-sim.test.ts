@@ -98,3 +98,23 @@ describe("truck visits", () => {
     expect(truck.x).toBe(startX);
   });
 });
+
+import { evaluateJournal } from "@/lib/toast-sim";
+describe("final evaluation", () => {
+  const odds = { jam: 0.4, ham: 0.6 };
+  it("marks the more likely topping as correct and early caution as fine", () => {
+    const r = evaluateJournal([
+      { n: 10, which: "Can't tell yet", gap: "Widening", jam: 0.5, ham: 0.5 },
+      { n: 100, which: "Jam", gap: "Widening", jam: 0.45, ham: 0.6 },
+      { n: 500, which: "Ham", gap: "Holding steady", jam: 0.41, ham: 0.59 },
+    ], odds);
+    expect(r.truth).toBe("Ham");
+    expect(r.verdicts.map((v) => v.whichOk)).toEqual([true, false, true]);
+    expect(r.verdicts.map((v) => v.gapOk)).toEqual([null, true, false]);
+    expect(r.score).toBe(0.6);
+    expect(r.finalOk).toBe(true);
+  });
+  it("does not excuse 'can't tell yet' after 50 drops", () => {
+    expect(evaluateJournal([{ n: 100, which: "Can't tell yet", gap: "Narrowing", jam: 0.4, ham: 0.6 }], odds).verdicts[0].whichOk).toBe(false);
+  });
+});

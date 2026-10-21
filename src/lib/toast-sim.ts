@@ -97,3 +97,27 @@ export function record(stats: Stats, kind: Kind, down: boolean) {
 export function rate(s: KindStats) {
   return s.n ? s.down / s.n : 0;
 }
+
+export type JournalEntry = { n: number; which: string; gap: string; jam: number; ham: number };
+export type EntryVerdict = { n: number; whichOk: boolean; gapOk: boolean | null; note: string };
+
+/** Score lab-notebook answers against the true odds and the actual gap trend. */
+export function evaluateJournal(journal: readonly JournalEntry[], odds: Odds) {
+  const truth = odds.jam > odds.ham ? "Jam" : "Ham";
+  const verdicts: EntryVerdict[] = journal.map((j, i) => {
+    const whichOk = j.which === truth || (j.which === "Can't tell yet" && j.n < 50);
+    const prev = journal[i - 1];
+    let gapOk: boolean | null = null;
+    if (prev) {
+      const d = Math.abs(j.ham - j.jam) - Math.abs(prev.ham - prev.jam);
+      const actual = d > 0.02 ? "Widening" : d < -0.02 ? "Narrowing" : "Holding steady";
+      gapOk = j.gap === actual;
+    }
+    const note = j.which === "Can't tell yet" && j.n < 50 ? "Wise caution with so few drops."
+      : whichOk ? `Right call: ${truth} really is more likely.` : j.which === "Can't tell yet" ? "By now there was enough data to commit." : `The data fooled you here — ${truth} is truly more likely.`;
+    return { n: j.n, whichOk, gapOk, note };
+  });
+  const checks = verdicts.flatMap((v) => (v.gapOk == null ? [v.whichOk] : [v.whichOk, v.gapOk]));
+  const score = checks.length ? checks.filter(Boolean).length / checks.length : 0;
+  return { truth, verdicts, score, finalOk: verdicts.at(-1)?.whichOk ?? false };
+}

@@ -375,7 +375,7 @@ export function ToastGame() {
         ctx.translate(ax, ay);
         if (a.hitT > 0 && a.kind !== "truck") ctx.rotate(Math.sin(now / 40) * 0.12);
         const bob = a.kind === "truck" ? 0 : Math.abs(Math.sin(now / 180 + a.x * 20)) * 3;
-        if (a.vx < 0) ctx.scale(-1, 1);
+        if (a.vx < 0) ctx.scale(-1, 1); // truck.png is pre-mirrored so its sign reads correctly here
         ctx.filter = "drop-shadow(3px 4px 0 rgba(0,0,0,0.35))";
         if (a.kind === "truck") ctx.drawImage(im, 21, 38, 998, 555, -bw / 2, -bh, bw, bh);
         else ctx.drawImage(im, -bw / 2, -bh - bob, bw, bh);
