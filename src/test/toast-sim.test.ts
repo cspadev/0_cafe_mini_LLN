@@ -115,6 +115,6 @@ describe("final evaluation", () => {
     expect(r.finalOk).toBe(true);
   });
   it("does not excuse 'can't tell yet' after 50 drops", () => {
-    expect(evaluateJournal([{ n: 100, which: "Can't tell yet", gap: "Narrowing", jam: 0.4, ham: 0.6 }], odds).verdicts[0].whichOk).toBe(false);
+    expect(evaluateJournal([{ n: 100, which: "Can't tell yet", gap: "Narrowing", jam: 0.4, ham: 0.6 }], odds).verdicts[0]?.whichOk).toBe(false);
   });
 });
