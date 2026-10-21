@@ -17,6 +17,8 @@ import { ConvergenceChart } from "./ConvergenceChart";
 import { Button } from "@/components/ui/button";
 import { BookOpen, Gamepad2, RotateCcw, Volume2, VolumeX, Droplets, X, Eye } from "lucide-react";
 import { ToastAudio } from "@/lib/toast-audio";
+import { ComicStrip, INTRO_PANELS, OUTRO_PANELS } from "./ComicStory";
+import { evaluateJournal } from "@/lib/toast-sim";
 
 type Actor = {
   kind: "student" | "chef" | "truck";
@@ -64,6 +66,8 @@ export function ToastGame() {
   const lab = useRef(true);
   const [labMode, setLabMode] = useState(true);
   const [reportOpen, setReportOpen] = useState(false);
+  const [introOpen, setIntroOpen] = useState(true);
+  const [debrief, setDebrief] = useState(false);
   const reportRequested = useRef(false);
   const [soundOn, setSoundOn] = useState(true);
   const flights = useRef<Flight[]>([]);
@@ -375,7 +379,7 @@ export function ToastGame() {
         ctx.translate(ax, ay);
         if (a.hitT > 0 && a.kind !== "truck") ctx.rotate(Math.sin(now / 40) * 0.12);
         const bob = a.kind === "truck" ? 0 : Math.abs(Math.sin(now / 180 + a.x * 20)) * 3;
-        if (a.vx < 0) ctx.scale(-1, 1);
+        if (a.vx < 0) ctx.scale(-1, 1); // truck.png is pre-mirrored so its sign reads correctly here
         ctx.filter = "drop-shadow(3px 4px 0 rgba(0,0,0,0.35))";
         if (a.kind === "truck") ctx.drawImage(im, 21, 38, 998, 555, -bw / 2, -bh, bw, bh);
         else ctx.drawImage(im, -bw / 2, -bh - bob, bw, bh);
@@ -680,9 +684,44 @@ export function ToastGame() {
           {journal.length === 0 ? <p className="mt-2 text-sm text-ink/60">No observations recorded yet.</p> : <ul className="mt-2 space-y-2 text-sm">{journal.map((j) => <li key={j.n} className="border-b border-ink/15 pb-2"><b>N={j.n}:</b> {j.which} · gap {j.gap.toLowerCase()} · Jam {(j.jam * 100).toFixed(1)}% / Ham {(j.ham * 100).toFixed(1)}%</li>)}</ul>}
           {N >= 1000 && !revealed && <Button variant="outline" className="mt-4" onClick={() => setRevealed(true)}><Eye />Reveal true odds</Button>}
           {revealed && <p className="mt-3 bg-mustard/20 p-3 text-sm">This experiment's secret odds: Jam <b>{Math.round(odds.current.jam * 100)}%</b>, Ham <b>{Math.round(odds.current.ham * 100)}%</b>.</p>}
-          <Button className="mt-4 w-full bg-ink text-paper hover:bg-ink/90" onClick={() => { setReportOpen(false); paused.current = false; }}>Back to the courtyard</Button>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <Button className="bg-ink text-paper hover:bg-ink/90" onClick={() => { setReportOpen(false); paused.current = false; }}>Back to the courtyard</Button>
+            <Button className="font-display bg-jam text-paper hover:bg-jam/90" disabled={journal.length === 0} onClick={() => { setReportOpen(false); setDebrief(true); }}>Finish & evaluate</Button>
+          </div>
+          {journal.length === 0 && <p className="mt-2 text-xs text-ink/60">Log at least one checkpoint to get your evaluation.</p>}
         </section>
       </div>}
+      {introOpen && <div className="absolute inset-0 z-40 overflow-y-auto bg-ink/70 p-4">
+        <section role="dialog" aria-modal="true" aria-label="Before you start" className="mx-auto max-w-3xl border-4 border-ink bg-paper p-5 shadow-cut">
+          <p className="font-display text-sm text-jam">TODAY'S EXPERIMENT</p>
+          <h2 className="font-display text-2xl leading-tight sm:text-3xl">Two laws walk into a courtyard…</h2>
+          <p className="mt-2 text-sm">Only one of them can be trusted. Let's test both — with science, a balcony and a <i>lot</i> of toast.</p>
+          <div className="mt-4"><ComicStrip panels={INTRO_PANELS} /></div>
+          <div className="mt-5 border-l-4 border-mustard bg-mustard/15 p-3 text-sm">
+            <b>Your mission:</b> each toast secretly has its own chance of landing topping-down. Drop jam and ham toast, watch the two running averages, and at each checkpoint say which topping you think is truly unluckier. Click to drop, hold to keep dropping. Hit the chef or the bread truck for bonus toast!
+          </div>
+          <Button className="font-display mt-4 w-full border-4 border-ink bg-jam py-5 text-lg text-paper shadow-cut hover:bg-jam/90" onClick={() => { setIntroOpen(false); const sound = audio.current; if (sound) void sound.unlock().then(() => sound.play("drop")); }}>START THE EXPERIMENT</Button>
+        </section>
+      </div>}
+      {debrief && (() => {
+        const ev = evaluateJournal(journal, odds.current);
+        const pct = Math.round(ev.score * 100);
+        return <div className="absolute inset-0 z-40 overflow-y-auto bg-ink/70 p-4">
+          <section role="dialog" aria-modal="true" aria-label="Experiment evaluation" className="mx-auto max-w-3xl border-4 border-ink bg-paper p-5 shadow-cut">
+            <p className="font-display text-sm text-jam">EXPERIMENT EVALUATION · N = {N.toLocaleString()}</p>
+            <h2 className="font-display text-2xl leading-tight sm:text-3xl">{pct >= 75 ? "Certified Toast Scientist!" : pct >= 45 ? "Promising Crumb Researcher" : "Murphy got you this time…"}</h2>
+            <p className="mt-1 text-sm">Your notebook score: <b>{pct}%</b>. The secret odds were Jam <b>{Math.round(odds.current.jam * 100)}%</b> and Ham <b>{Math.round(odds.current.ham * 100)}%</b> — so <b>{ev.truth}</b> was truly the unluckier topping.</p>
+            <ul className="mt-3 space-y-1.5 text-sm">{ev.verdicts.map((v) => <li key={v.n} className="border-b border-ink/15 pb-1.5"><b>N={v.n}:</b> {v.whichOk ? "✔" : "✘"} {v.note}{v.gapOk != null && (v.gapOk ? " Gap trend spotted correctly." : " The gap trend was actually different.")}</li>)}</ul>
+            <div className="mt-4"><ConvergenceChart stats={s} /></div>
+            <div className="mt-3 border-l-4 border-mustard bg-mustard/15 p-3 text-sm">
+              <b>What happened?</b> At first the lines jumped all over the place — a few lucky bounces could make either topping look cursed. As N grew, each new toast moved the average less and the lines <b>converged</b> towards the true probabilities. That's the Law of Large Numbers: you need <b>enough observations</b> before you can decide with reasonable certainty. And Murphy? Toast doesn't <i>always</i> land topping-down — it just happens often enough to feel personal.
+            </div>
+            <h3 className="font-display mt-6 text-xl">But wait — is real toast cursed?</h3>
+            <div className="mt-3"><ComicStrip panels={OUTRO_PANELS} /></div>
+            <Button className="font-display mt-5 w-full border-4 border-ink bg-jam py-5 text-lg text-paper shadow-cut hover:bg-jam/90" onClick={() => { setDebrief(false); resetAll(); }}>NEW EXPERIMENT (NEW SECRET ODDS)</Button>
+          </section>
+        </div>;
+      })()}
     </div>
   );
 }
