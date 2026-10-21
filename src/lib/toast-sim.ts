@@ -51,6 +51,29 @@ export function canOpenNotebook(lab: boolean, burstCount: number, flightCount: n
 
 export const MILESTONES = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000];
 
+/** Stop normal launches at a due checkpoint, then let every existing flight/burst settle. */
+export function shouldDrainForNotebook(lab: boolean, n: number, seen: ReadonlySet<number>, reportRequested = false) {
+  return lab && (reportRequested || MILESTONES.some((m) => n >= m && !seen.has(m)));
+}
+
+/** Match the background's centered cover crop, keeping walkers anchored to the actual paving. */
+export function courtyardPoint(x: number, y: number, width: number, height: number) {
+  const image = TOAST_CONFIG.courtyard;
+  const scale = Math.max(width / image.width, height / image.height);
+  return {
+    x: (width - image.width * scale) / 2 + x * image.width * scale,
+    y: (height - image.height * scale) / 2 + y * image.height * scale,
+  };
+}
+
+export function advanceWalker(walker: { x: number; vx: number; min: number; max: number }, dt: number) {
+  walker.x += walker.vx * dt;
+  if (walker.x < walker.min || walker.x > walker.max) {
+    walker.vx *= -1;
+    walker.x = Math.min(walker.max, Math.max(walker.min, walker.x));
+  }
+}
+
 export type KindStats = { n: number; down: number; series: [number, number][] };
 export type Stats = Record<Kind, KindStats>;
 

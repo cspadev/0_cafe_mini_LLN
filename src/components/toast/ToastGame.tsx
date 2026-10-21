@@ -9,7 +9,9 @@ import s1Src from "@/assets/student1.png";
 import s2Src from "@/assets/student2.png";
 import s3Src from "@/assets/student3.png";
 import s4Src from "@/assets/student4.png";
-import { MILESTONES, createOdds, canOpenNotebook, createStats, createTruckVisit, advanceTruck, rewardTruckHit, rate, record, rollDown, type Kind, type Stats } from "@/lib/toast-sim";
+import s5Src from "@/assets/student5.png";
+import s6Src from "@/assets/student6.png";
+import { MILESTONES, createOdds, canOpenNotebook, shouldDrainForNotebook, courtyardPoint, advanceWalker, createStats, createTruckVisit, advanceTruck, rewardTruckHit, rate, record, rollDown, type Kind, type Stats } from "@/lib/toast-sim";
 import { TOAST_CONFIG } from "@/lib/toast-config";
 import { ConvergenceChart } from "./ConvergenceChart";
 import { Button } from "@/components/ui/button";
@@ -48,7 +50,7 @@ const STUDENT_LINES = ["EWW!", "MY HOODIE!", "WHO DID THAT?!", "Not again…", "
 const CHEF_LINES = ["MON DIEU!", "MY TRAY!", "AAARGH!", "SACRÉ TOAST!"];
 const depth = (y: number) => 0.35 + 0.9 * y;
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
-const studentImages = { student1: s1Src, student2: s2Src, student3: s3Src, student4: s4Src };
+const studentImages = { student1: s1Src, student2: s2Src, student3: s3Src, student4: s4Src, student5: s5Src, student6: s6Src };
 
 type Journal = { n: number; which: string; gap: string; jam: number; ham: number };
 
@@ -59,8 +61,8 @@ export function ToastGame() {
   const stats = useRef<Stats>(createStats());
   const odds = useRef(createOdds());
   const audio = useRef<ToastAudio | null>(null);
-  const lab = useRef(false);
-  const [labMode, setLabMode] = useState(false);
+  const lab = useRef(true);
+  const [labMode, setLabMode] = useState(true);
   const [reportOpen, setReportOpen] = useState(false);
   const reportRequested = useRef(false);
   const [soundOn, setSoundOn] = useState(true);
@@ -79,7 +81,7 @@ export function ToastGame() {
   const actors = useRef<Actor[]>([
     { kind: "truck", img: truckSrc, x: TOAST_CONFIG.truck.outsideX, y: TOAST_CONFIG.truck.pathY, vx: -TOAST_CONFIG.truck.speed, hitT: 0, say: "", min: TOAST_CONFIG.truck.stopX, max: TOAST_CONFIG.truck.outsideX },
     { kind: "chef", img: chefSrc, x: 0.45, y: 0.6, vx: 0.07, hitT: 0, say: "", min: 0.25, max: 0.8 },
-    ...TOAST_CONFIG.students.map((student): Actor => ({ kind: "student", img: studentImages[student.image], x: student.x, y: student.y, vx: student.speed, hitT: 0, say: "", min: student.min, max: student.max })),
+    ...TOAST_CONFIG.students.map((student): Actor => ({ kind: "student", img: studentImages[student.image], x: student.x, ...TOAST_CONFIG.walkingPaths[student.path], vx: student.speed, hitT: 0, say: "" })),
   ]);
 
   const [, setTick] = useState(0);
@@ -271,8 +273,9 @@ export function ToastGame() {
       for (const a of actors.current) {
         if (a.kind === "truck" && truckVisit.current.phase === "waiting") continue;
         const { bw, bh } = actorBox(a);
-        const ax = a.x * w;
-        const ay = a.y * h;
+        const point = a.kind === "student" ? courtyardPoint(a.x, a.y, w, h) : { x: a.x * w, y: a.y * h };
+        const ax = point.x;
+        const ay = point.y;
         if (gx > ax - bw / 2 && gx < ax + bw / 2 && gy > ay - bh && gy < ay + 4) {
           if (a.kind === "student") {
             a.hitT = 1.2;
@@ -330,11 +333,7 @@ export function ToastGame() {
           if (a.kind === "truck") {
             a.x = truckVisit.current.x;
           } else {
-            a.x += a.vx * dt * panic;
-            if (a.x < a.min || a.x > a.max) {
-              a.vx *= -1;
-              a.x = Math.min(a.max, Math.max(a.min, a.x));
-            }
+            advanceWalker(a, dt * panic);
           }
           a.hitT = Math.max(0, a.hitT - dt);
         }
@@ -365,8 +364,9 @@ export function ToastGame() {
         const im = imgs.current[a.img];
         if (!im?.complete) continue;
         const { bw, bh } = actorBox(a);
-        const ax = a.x * w;
-        const ay = a.y * h;
+        const point = a.kind === "student" ? courtyardPoint(a.x, a.y, w, h) : { x: a.x * w, y: a.y * h };
+        const ax = point.x;
+        const ay = point.y;
         ctx.save();
         ctx.fillStyle = "rgba(0,0,0,0.25)";
         ctx.beginPath();
@@ -473,14 +473,18 @@ export function ToastGame() {
   }
 
   function checkMilestone() {
-    if (paused.current || !canOpenNotebook(lab.current, bursts.current.length, flights.current.length, holding.current)) return;
+    if (paused.current) return;
+    const N = stats.current.jam.n + stats.current.ham.n;
+    if (!shouldDrainForNotebook(lab.current, N, seen.current, reportRequested.current)) return;
+    holding.current = false;
+    holdAcc.current = 0;
+    if (!canOpenNotebook(lab.current, bursts.current.length, flights.current.length, holding.current)) return;
     if (reportRequested.current) {
       reportRequested.current = false;
       paused.current = true;
       setReportOpen(true);
       return;
     }
-    const N = stats.current.jam.n + stats.current.ham.n;
     const crossed = MILESTONES.filter((m) => N >= m && !seen.current.has(m));
     const latest = crossed.at(-1);
     if (latest == null) return;
@@ -505,7 +509,7 @@ export function ToastGame() {
     aim.current = { x: (e.clientX - r.left) / r.width, y: Math.max(0.28, (e.clientY - r.top) / r.height) };
   };
   const startHold = () => {
-    if (paused.current) return;
+    if (paused.current || shouldDrainForNotebook(lab.current, stats.current.jam.n + stats.current.ham.n, seen.current, reportRequested.current)) return;
     void audio.current?.unlock();
     launch(false);
     holding.current = true;
