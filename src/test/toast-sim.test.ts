@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createOdds, canOpenNotebook, createStats, createTruckVisit, advanceTruck, rewardTruckHit, record, rollDown, rate } from "@/lib/toast-sim";
+import { createOdds, canOpenNotebook, shouldDrainForNotebook, courtyardPoint, advanceWalker, createStats, createTruckVisit, advanceTruck, rewardTruckHit, record, rollDown, rate } from "@/lib/toast-sim";
 import { TOAST_CONFIG } from "@/lib/toast-config";
 
 describe("toast probabilities", () => {
@@ -32,6 +32,38 @@ describe("toast probabilities", () => {
   });
   it("reports appear only in lab sessions", () => {
     expect(canOpenNotebook(false, 0, 0, false)).toBe(false);
+  });
+  it.each([10, 25, 50, 100])("stops normal throwing at checkpoint %i and waits for existing drops", (n) => {
+    const seen = new Set([10, 25, 50, 100].filter((m) => m < n));
+    expect(shouldDrainForNotebook(true, n - 1, seen)).toBe(false);
+    expect(shouldDrainForNotebook(true, n, seen)).toBe(true);
+    expect(canOpenNotebook(true, 1, 20, false)).toBe(false);
+    expect(canOpenNotebook(true, 0, 1, false)).toBe(false);
+    expect(canOpenNotebook(true, 0, 0, false)).toBe(true);
+    seen.add(n);
+    expect(shouldDrainForNotebook(true, n, seen)).toBe(false);
+  });
+  it("does not stop Play mode at lab checkpoints", () => {
+    expect(shouldDrainForNotebook(false, 100, new Set())).toBe(false);
+  });
+});
+
+describe("paved student paths", () => {
+  it("keeps every walker inside its paved lane even when running after a hit", () => {
+    for (const student of TOAST_CONFIG.students) {
+      const lane = TOAST_CONFIG.walkingPaths[student.path];
+      const walker = { x: student.x as number, vx: student.speed as number, ...lane };
+      for (let i = 0; i < 3000; i++) {
+        advanceWalker(walker, 0.125);
+        expect(walker.x).toBeGreaterThanOrEqual(lane.min);
+        expect(walker.x).toBeLessThanOrEqual(lane.max);
+        expect(walker.y).toBe(lane.y);
+      }
+    }
+  });
+  it("anchors paving coordinates to the centered image crop", () => {
+    expect(courtyardPoint(0.5, 0.5, 1280, 1800)).toEqual({ x: 640, y: 900 });
+    expect(courtyardPoint(0.75, 0.5, 390, 726)).toEqual({ x: 467.25, y: 363 });
   });
 });
 

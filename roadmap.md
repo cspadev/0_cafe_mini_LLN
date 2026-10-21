@@ -1,4 +1,6 @@
 # Game updates
+- [x] Keep student movement on paved paths and add two new student types (eight walkers; desktop/mobile checked).
+- [x] Restore interval lab prompts during held throwing; verified successive prompts, saved journal, all 21 landings before a chef-barrage notebook, and uninterrupted Play mode; 16 tests passed.
 - [x] Configure rare, correctly scaled truck visits from the right and a 50-toast bonus (verified 51 landings from one hit).
 - [x] Add more student types and correct the held-toast grip (desktop/mobile checked).
 - [x] Restore sound playback and verify active audio signal, mute/unmute, and gameplay; physical device audibility cannot be checked remotely.
