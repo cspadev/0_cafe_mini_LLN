@@ -35,7 +35,10 @@ export const REVIVE_QUESTIONS = [
   { question: "As more drops land, the running average tends towards…", options: ["The topping’s true probability", "Exactly 50%, regardless of the odds", "100%, because Murphy says so"], correct: 0, explanation: "The Law of Large Numbers points to the true probability, not necessarily 50%." },
 ] as const;
 export function evaluateReviveTest(answers: readonly number[]) {
-  const complete = answers.length === 3 && REVIVE_QUESTIONS.every((q, i) => Number.isInteger(answers[i]) && answers[i] >= 0 && answers[i] < q.options.length);
+  const complete = answers.length === 3 && REVIVE_QUESTIONS.every((q, i) => {
+    const answer = answers[i];
+    return answer !== undefined && Number.isInteger(answer) && answer >= 0 && answer < q.options.length;
+  });
   const correct = complete ? REVIVE_QUESTIONS.filter((q, i) => answers[i] === q.correct).length : 0;
   return { complete, correct, passed: complete && correct >= 1 };
 }
