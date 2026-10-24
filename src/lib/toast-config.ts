@@ -1,5 +1,6 @@
 /** All tunable courtyard, bonus and sound parameters live here. */
 export const TOAST_CONFIG = {
+  stock: { initial: 30, studentHit: 1, revivePenaltyPoints: 20 },
   bonuses: { chef: 20, truck: 50 },
   truck: {
     pathY: 0.59,

@@ -1,6 +1,56 @@
 import { describe, expect, it } from "vitest";
 import { createOdds, canOpenNotebook, shouldDrainForNotebook, courtyardPoint, advanceWalker, createStats, createTruckVisit, advanceTruck, rewardTruckHit, record, rollDown, rate } from "@/lib/toast-sim";
 import { TOAST_CONFIG } from "@/lib/toast-config";
+import { createSupply, spendToast, rewardSupplyHit, reviveSupply, finalScorePoints, canOpenEmptyLab } from "@/lib/toast-sim";
+
+describe("finite toast stock", () => {
+  it("starts with exactly 30 toasts and cannot throw a 31st", () => {
+    const supply = createSupply();
+    expect(supply.remaining).toBe(30);
+    for (let i = 0; i < 30; i++) expect(spendToast(supply)).toBe(true);
+    expect(spendToast(supply)).toBe(false);
+    expect(supply.remaining).toBe(0);
+  });
+  it("returns one stock toast per student hit", () => {
+    const supply = createSupply();
+    spendToast(supply);
+    expect(rewardSupplyHit(supply, "student")).toBe(1);
+    expect(supply.remaining).toBe(30);
+  });
+  it("adds 20 stock toasts for a chef hit", () => {
+    const supply = createSupply();
+    expect(rewardSupplyHit(supply, "chef")).toBe(20);
+    expect(supply.remaining).toBe(50);
+  });
+  it("leaves truck rewards as a barrage rather than stock", () => {
+    const supply = createSupply();
+    expect(rewardSupplyHit(supply, "truck")).toBe(0);
+    expect(supply.remaining).toBe(30);
+    const truck = createTruckVisit();
+    truck.phase = "parked";
+    expect(rewardTruckHit(truck)).toBe(50);
+  });
+  it("opens an empty-stock lab only after all flights and barrages settle", () => {
+    const supply = { remaining: 0, revives: 0 };
+    expect(canOpenEmptyLab(supply, 1, 0)).toBe(false);
+    expect(canOpenEmptyLab(supply, 0, 1)).toBe(false);
+    expect(canOpenEmptyLab(supply, 0, 0)).toBe(true);
+    supply.remaining = 1;
+    expect(canOpenEmptyLab(supply, 0, 0)).toBe(false);
+  });
+  it("refills an empty bin with 30 and counts each revive", () => {
+    const supply = { remaining: 0, revives: 0 };
+    expect(reviveSupply(supply)).toBe(true);
+    expect(supply).toEqual({ remaining: 30, revives: 1 });
+    expect(reviveSupply(supply)).toBe(false);
+  });
+  it("subtracts 20 percentage points per revive with a zero floor", () => {
+    expect(finalScorePoints(0.85, 0)).toBe(85);
+    expect(finalScorePoints(0.85, 1)).toBe(65);
+    expect(finalScorePoints(0.85, 2)).toBe(45);
+    expect(finalScorePoints(0.35, 2)).toBe(0);
+  });
+});
 
 describe("toast probabilities", () => {
   it("generates different secret odds for new experiments", () => {

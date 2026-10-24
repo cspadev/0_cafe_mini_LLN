@@ -12,8 +12,9 @@
 ## Project rules
 - Game simulation rules (probabilities, milestones, stats) live in `src/lib/toast-sim.ts`, kept pure so they're unit-testable; rendering is a single canvas loop in `src/components/toast/ToastGame.tsx` for performance with hundreds of falling toasts.
 - Generate secret odds once per experiment and pass them into every roll; this preserves a stable probability for convergence while allowing replay variation.
-- At due lab checkpoints, stop normal launches and drain all existing flights and bursts before opening notebooks or reports; Play mode remains uninterrupted.
+- At due lab checkpoints, stop normal launches and drain all existing flights and bursts before opening notebooks or reports; Play skips interval checkpoints but both modes open an empty-stock lab after settling.
 - Synthesise browser-only audio in `src/lib/toast-audio.ts` and unlock it on user gestures; sound stays optional and requires no external service.
 - Keep tunable bonuses, actor sizes/roster, truck visit timing/path and sound levels in `src/lib/toast-config.ts`; simulation and rendering consume this shared config to avoid divergent rules.
 - Model truck visits as a pure offscreen-wait/enter/park/reverse-exit state machine in the simulation, with one reward per visit so repeated hits cannot multiply a single delivery.
 - Define student walking lanes in courtyard-image coordinates and project through the centered cover crop for both drawing and hit detection so walkers stay on paving at any aspect ratio.
+- Keep finite supply spending, hit rewards, revival and score deductions as pure simulation helpers with shared config; this makes inventory and grading rules independently testable.
