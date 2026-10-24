@@ -1,4 +1,6 @@
 # Game updates
+- [x] Replace journal grading with three rounds, fresh 3–8-point-gap odds and one-third scoring; 28 tests passed.
+- [x] Verify early/requested decisions, one-correct revival, all-wrong round loss, fresh round stock, final 67% for two correct rounds and new-game reset; no browser errors.
 - [x] Add finite toast stock, target rewards and settled empty-stock labs (24 simulation tests passed).
 - [x] Add revives and final-score penalties; verified 30 → 0 → revive to 30 → 0 → evaluation with −20 points → new experiment at 30; no browser errors.
 - [x] Keep student movement on paved paths and add two new student types (eight walkers; desktop/mobile checked).

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createOdds, canOpenNotebook, shouldDrainForNotebook, courtyardPoint, advanceWalker, createStats, createTruckVisit, advanceTruck, rewardTruckHit, record, rollDown, rate } from "@/lib/toast-sim";
 import { TOAST_CONFIG } from "@/lib/toast-config";
-import { createSupply, spendToast, rewardSupplyHit, reviveSupply, finalScorePoints, canOpenEmptyLab } from "@/lib/toast-sim";
+import { createSupply, spendToast, rewardSupplyHit, reviveSupply, finalScorePoints, canOpenEmptyLab, evaluateRound, evaluateReviveTest } from "@/lib/toast-sim";
 
 describe("finite toast stock", () => {
   it("starts with exactly 30 toasts and cannot throw a 31st", () => {
@@ -44,18 +44,38 @@ describe("finite toast stock", () => {
     expect(supply).toEqual({ remaining: 30, revives: 1 });
     expect(reviveSupply(supply)).toBe(false);
   });
-  it("subtracts 20 percentage points per revive with a zero floor", () => {
-    expect(finalScorePoints(0.85, 0)).toBe(85);
-    expect(finalScorePoints(0.85, 1)).toBe(65);
-    expect(finalScorePoints(0.85, 2)).toBe(45);
-    expect(finalScorePoints(0.35, 2)).toBe(0);
+  it("awards exactly one third per correct round, with no revive penalty", () => {
+    expect(finalScorePoints(0)).toBe(0);
+    expect(finalScorePoints(1)).toBe(33);
+    expect(finalScorePoints(2)).toBe(67);
+    expect(finalScorePoints(3)).toBe(100);
+  });
+  it("ends the round on a final guess and awards nothing for a wrong guess", () => {
+    expect(evaluateRound(1, "jam", { jam: 0.6, ham: 0.55 }, 10).correct).toBe(true);
+    expect(evaluateRound(2, "ham", { jam: 0.6, ham: 0.55 }, 100).correct).toBe(false);
+    expect(evaluateRound(3, null, { jam: 0.6, ham: 0.55 }, 30).reason).toBe("test");
+    expect(TOAST_CONFIG.rounds.count).toBe(3);
+  });
+  it("requires all three lab answers and at least one correct to revive", () => {
+    expect(evaluateReviveTest([0, 0, 1])).toEqual({ complete: true, correct: 0, passed: false });
+    expect(evaluateReviveTest([1, 0, 1])).toEqual({ complete: true, correct: 1, passed: true });
+    expect(evaluateReviveTest([1, 2, 0])).toEqual({ complete: true, correct: 3, passed: true });
+    expect(evaluateReviveTest([1, -1, -1]).passed).toBe(false);
   });
 });
 
 describe("toast probabilities", () => {
   it("generates different secret odds for new experiments", () => {
-    expect(createOdds(() => 0)).toEqual({ jam: 0.35, ham: 0.43 });
-    expect(createOdds(() => 0.9)).toEqual({ jam: 0.88, ham: 0.67 });
+    expect(createOdds(() => 0)).toEqual({ jam: 0.35, ham: 0.38 });
+    expect(createOdds(() => 0.9)).toEqual({ jam: 0.75, ham: 0.67 });
+  });
+  it("keeps the secret difference between 3 and 8 percentage points each round", () => {
+    for (let i = 0; i <= 100; i++) {
+      const odds = createOdds(() => i / 100);
+      const gap = Math.round(Math.abs(odds.jam - odds.ham) * 100);
+      expect(gap).toBeGreaterThanOrEqual(3);
+      expect(gap).toBeLessThanOrEqual(8);
+    }
   });
   it("either topping can have the higher probability", () => {
     expect(createOdds(() => 0).ham).toBeGreaterThan(createOdds(() => 0).jam);
