@@ -1,4 +1,6 @@
 # Game updates
+- [x] Add finite toast stock, target rewards and settled empty-stock labs (24 simulation tests passed).
+- [x] Add revives and final-score penalties; verified 30 → 0 → revive to 30 → 0 → evaluation with −20 points → new experiment at 30; no browser errors.
 - [x] Keep student movement on paved paths and add two new student types (eight walkers; desktop/mobile checked).
 - [x] Restore interval lab prompts during held throwing; verified successive prompts, saved journal, all 21 landings before a chef-barrage notebook, and uninterrupted Play mode; 16 tests passed.
 - [x] Configure rare, correctly scaled truck visits from the right and a 50-toast bonus (verified 51 landings from one hit).

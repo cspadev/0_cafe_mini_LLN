@@ -2,6 +2,33 @@ import { TOAST_CONFIG } from "./toast-config";
 
 export type Kind = "jam" | "ham";
 
+export type ToastSupply = { remaining: number; revives: number };
+export function createSupply(): ToastSupply {
+  return { remaining: TOAST_CONFIG.stock.initial, revives: 0 };
+}
+export function spendToast(supply: ToastSupply) {
+  if (supply.remaining <= 0) return false;
+  supply.remaining--;
+  return true;
+}
+export function rewardSupplyHit(supply: ToastSupply, target: "student" | "chef" | "truck") {
+  const amount = target === "student" ? TOAST_CONFIG.stock.studentHit : target === "chef" ? TOAST_CONFIG.bonuses.chef : 0;
+  supply.remaining += amount;
+  return amount;
+}
+export function reviveSupply(supply: ToastSupply) {
+  if (supply.remaining > 0) return false;
+  supply.remaining = TOAST_CONFIG.stock.initial;
+  supply.revives++;
+  return true;
+}
+export function finalScorePoints(score: number, revives: number) {
+  return Math.max(0, Math.round(score * 100) - revives * TOAST_CONFIG.stock.revivePenaltyPoints);
+}
+export function canOpenEmptyLab(supply: ToastSupply, burstCount: number, flightCount: number) {
+  return supply.remaining === 0 && burstCount === 0 && flightCount === 0;
+}
+
 export type TruckVisit = { phase: "waiting" | "entering" | "parked" | "leaving"; x: number; remaining: number; rewarded: boolean };
 const visitDelay = (range: readonly [number, number], rng: () => number) => range[0] + rng() * (range[1] - range[0]);
 

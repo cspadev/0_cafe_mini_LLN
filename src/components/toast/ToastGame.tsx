@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { BookOpen, Gamepad2, RotateCcw, Volume2, VolumeX, Droplets, X, Eye } from "lucide-react";
 import { ToastAudio } from "@/lib/toast-audio";
 import { ComicStrip, INTRO_PANELS, OUTRO_PANELS } from "./ComicStory";
-import { evaluateJournal } from "@/lib/toast-sim";
+import { evaluateJournal, createSupply, spendToast, rewardSupplyHit, reviveSupply, finalScorePoints, canOpenEmptyLab } from "@/lib/toast-sim";
 
 type Actor = {
   kind: "student" | "chef" | "truck";
@@ -62,6 +62,8 @@ export function ToastGame() {
   const imgs = useRef<Record<string, HTMLImageElement>>({});
   const stats = useRef<Stats>(createStats());
   const odds = useRef(createOdds());
+  const supply = useRef(createSupply());
+  const [emptyLab, setEmptyLab] = useState(false);
   const audio = useRef<ToastAudio | null>(null);
   const lab = useRef(true);
   const [labMode, setLabMode] = useState(true);
@@ -106,6 +108,7 @@ export function ToastGame() {
 
   const launch = useCallback(
     (bonus: boolean, opts?: { around?: { x: number; y: number }; fromSky?: boolean }) => {
+      if (!bonus && !spendToast(supply.current)) { holding.current = false; return; }
       const { w, h } = size.current;
       const kind: Kind = bonus ? (Math.random() < 0.5 ? "jam" : "ham") : hand.current.kind;
       const down = rollDown(kind, odds.current);
@@ -282,15 +285,16 @@ export function ToastGame() {
         const ay = point.y;
         if (gx > ax - bw / 2 && gx < ax + bw / 2 && gy > ay - bh && gy < ay + 4) {
           if (a.kind === "student") {
+            rewardSupplyHit(supply.current, "student");
             a.hitT = 1.2;
             audio.current?.play("student");
             bubbles.current.push({ text: STUDENT_LINES[Math.floor(Math.random() * STUDENT_LINES.length)] ?? "EWW!", x: ax, y: ay - bh, t: 1.3 });
-          } else if (a.kind === "chef" && !f.bonus) {
+          } else if (a.kind === "chef") {
+            rewardSupplyHit(supply.current, "chef");
             a.hitT = 1.6;
             audio.current?.play("chef");
             bubbles.current.push({ text: CHEF_LINES[Math.floor(Math.random() * CHEF_LINES.length)] ?? "SACRÉ TOAST!", x: ax, y: ay - bh, t: 1.6, big: true });
-            bursts.current.push({ left: TOAST_CONFIG.bonuses.chef, every: 0.06, acc: 0, fromSky: false, around: { x: a.x, y: a.y } });
-            flash(`+${TOAST_CONFIG.bonuses.chef} TOAST BARRAGE!`);
+            flash(`+${TOAST_CONFIG.bonuses.chef} TOASTS IN STOCK!`);
           } else if (a.kind === "truck" && !f.bonus) {
             const bonus = rewardTruckHit(truckVisit.current);
             if (!bonus) break;
@@ -411,7 +415,7 @@ export function ToastGame() {
       const g = handGeom();
       const himg = imgs.current[handSrc];
       if (himg?.complete) ctx.drawImage(himg, g.hx, g.hy, g.hs, g.hs);
-      if (hand.current.cooldown <= 0 || holding.current) {
+      if (supply.current.remaining > 0 && (hand.current.cooldown <= 0 || holding.current)) {
         const tim = imgs.current[hand.current.kind === "jam" ? jamSrc : hamSrc];
         if (tim?.complete && hand.current.cooldown <= 0) {
           ctx.save();
@@ -479,6 +483,18 @@ export function ToastGame() {
   function checkMilestone() {
     if (paused.current) return;
     const N = stats.current.jam.n + stats.current.ham.n;
+    if (supply.current.remaining === 0) {
+      holding.current = false;
+      holdAcc.current = 0;
+      if (!canOpenEmptyLab(supply.current, bursts.current.length, flights.current.length)) return;
+      MILESTONES.filter((m) => N >= m).forEach((m) => seen.current.add(m));
+      reportRequested.current = false;
+      paused.current = true;
+      setAnswer({});
+      setEmptyLab(true);
+      setMilestone(N);
+      return;
+    }
     if (!shouldDrainForNotebook(lab.current, N, seen.current, reportRequested.current)) return;
     holding.current = false;
     holdAcc.current = 0;
@@ -513,7 +529,7 @@ export function ToastGame() {
     aim.current = { x: (e.clientX - r.left) / r.width, y: Math.max(0.28, (e.clientY - r.top) / r.height) };
   };
   const startHold = () => {
-    if (paused.current || shouldDrainForNotebook(lab.current, stats.current.jam.n + stats.current.ham.n, seen.current, reportRequested.current)) return;
+    if (introOpen || debrief || supply.current.remaining === 0 || paused.current || shouldDrainForNotebook(lab.current, stats.current.jam.n + stats.current.ham.n, seen.current, reportRequested.current)) return;
     void audio.current?.unlock();
     launch(false);
     holding.current = true;
@@ -542,6 +558,9 @@ export function ToastGame() {
   const resetAll = () => {
     odds.current = createOdds();
     stats.current = createStats();
+    supply.current = createSupply();
+    setEmptyLab(false);
+    setDebrief(false);
     paused.current = false;
     holding.current = false;
     reportRequested.current = false;
@@ -608,8 +627,8 @@ export function ToastGame() {
         </header>
 
         <div className="pointer-events-none absolute bottom-4 right-4 rotate-2 bg-paper px-3 py-2 text-sm font-bold shadow-cut">
-          In hand:{" "}
-          <span className={handKind === "jam" ? "text-jam" : "text-ham"}>{handKind === "jam" ? "JAM TOAST" : "HAM TOAST"}</span>
+          <p className="font-display tabular-nums" aria-label="Toast stock">STOCK: {supply.current.remaining}</p>
+          {supply.current.remaining > 0 ? <span className={handKind === "jam" ? "text-jam" : "text-ham"}>{handKind === "jam" ? "JAM TOAST" : "HAM TOAST"}</span> : <span>OUT OF TOAST!</span>}
         </div>
 
         {banner && (
@@ -624,7 +643,8 @@ export function ToastGame() {
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-ink/50 p-4">
             <div role="dialog" aria-modal="true" aria-label="Lab notebook" className="max-h-[90%] w-full max-w-md overflow-y-auto border-4 border-ink bg-paper p-5 shadow-cut">
               <p className="font-display text-sm text-jam">CHECKPOINT · N = {milestone}</p>
-              <h2 className="font-display mt-1 text-2xl leading-tight">Lab notebook time!</h2>
+              <h2 className="font-display mt-1 text-2xl leading-tight">{emptyLab ? "The bread bin is empty!" : "Lab notebook time!"}</h2>
+              {emptyLab && <p className="mt-2 text-sm font-bold">Revive with {TOAST_CONFIG.stock.initial} toasts for −{TOAST_CONFIG.stock.revivePenaltyPoints} final score points, or finish your experiment.</p>}
               <p className="mt-2 text-sm">
                 So far: Jam lands face-down <b>{(jr * 100).toFixed(1)}%</b> ({s.jam.n} drops), Ham <b>{(hr * 100).toFixed(1)}%</b> ({s.ham.n} drops).
               </p>
@@ -650,13 +670,17 @@ export function ToastGame() {
                   {lastGap != null && ` Gap now: ${(Math.abs(hr - jr) * 100).toFixed(1)} pts (was ${(lastGap * 100).toFixed(1)}).`}
                 </p>
               )}
-              <Button
+              {!emptyLab && <Button
                 disabled={!answer.which || !answer.gap}
                 onClick={submitMilestone}
                 className="font-display mt-4 w-full border-4 border-ink bg-jam py-2 text-lg text-paper shadow-cut transition hover:-translate-y-0.5 disabled:opacity-40"
               >
                 LOG IT & KEEP DROPPING
-              </Button>
+              </Button>}
+              {emptyLab && <div className="mt-4 grid gap-2">
+                <Button className="font-display bg-jam text-paper hover:bg-jam/90" disabled={!answer.which || !answer.gap} onClick={() => { submitMilestone(); reviveSupply(supply.current); setEmptyLab(false); }}>Log & revive (+{TOAST_CONFIG.stock.initial} toasts · −{TOAST_CONFIG.stock.revivePenaltyPoints} pts)</Button>
+                <Button variant="outline" disabled={!answer.which || !answer.gap} onClick={() => { submitMilestone(); paused.current = true; setEmptyLab(false); setDebrief(true); }}>Log & finish experiment</Button>
+              </div>}
             </div>
           </div>
         )}
@@ -698,19 +722,20 @@ export function ToastGame() {
           <p className="mt-2 text-sm">Only one of them can be trusted. Let's test both — with science, a balcony and a <i>lot</i> of toast.</p>
           <div className="mt-4"><ComicStrip panels={INTRO_PANELS} /></div>
           <div className="mt-5 border-l-4 border-mustard bg-mustard/15 p-3 text-sm">
-            <b>Your mission:</b> each toast secretly has its own chance of landing topping-down. Drop jam and ham toast, watch the two running averages, and at each checkpoint say which topping you think is truly unluckier. Click to drop, hold to keep dropping. Hit the chef or the bread truck for bonus toast!
+            <b>Your mission:</b> each toast secretly has its own chance of landing topping-down. Drop jam and ham toast, watch the two running averages, and at each checkpoint say which topping you think is truly unluckier. Your bread bin starts with {TOAST_CONFIG.stock.initial} toasts. Students return one toast per hit; the chef adds {TOAST_CONFIG.bonuses.chef}. The truck unleashes a {TOAST_CONFIG.bonuses.truck}-toast armageddon! An empty bin means lab time: revive with {TOAST_CONFIG.stock.initial} more toasts, but lose {TOAST_CONFIG.stock.revivePenaltyPoints} final score points each time.
           </div>
           <Button className="font-display mt-4 w-full border-4 border-ink bg-jam py-5 text-lg text-paper shadow-cut hover:bg-jam/90" onClick={() => { setIntroOpen(false); const sound = audio.current; if (sound) void sound.unlock().then(() => sound.play("drop")); }}>START THE EXPERIMENT</Button>
         </section>
       </div>}
       {debrief && (() => {
         const ev = evaluateJournal(journal, odds.current);
-        const pct = Math.round(ev.score * 100);
+        const pct = finalScorePoints(ev.score, supply.current.revives);
         return <div className="absolute inset-0 z-40 overflow-y-auto bg-ink/70 p-4">
           <section role="dialog" aria-modal="true" aria-label="Experiment evaluation" className="mx-auto max-w-3xl border-4 border-ink bg-paper p-5 shadow-cut">
             <p className="font-display text-sm text-jam">EXPERIMENT EVALUATION · N = {N.toLocaleString()}</p>
             <h2 className="font-display text-2xl leading-tight sm:text-3xl">{pct >= 75 ? "Certified Toast Scientist!" : pct >= 45 ? "Promising Crumb Researcher" : "Murphy got you this time…"}</h2>
             <p className="mt-1 text-sm">Your notebook score: <b>{pct}%</b>. The secret odds were Jam <b>{Math.round(odds.current.jam * 100)}%</b> and Ham <b>{Math.round(odds.current.ham * 100)}%</b> — so <b>{ev.truth}</b> was truly the unluckier topping.</p>
+            <p className="mt-2 text-sm">Before revives: {Math.round(ev.score * 100)}% · Revives: {supply.current.revives} · Penalty: −{supply.current.revives * TOAST_CONFIG.stock.revivePenaltyPoints} points · Final score: <b>{pct}%</b></p>
             <ul className="mt-3 space-y-1.5 text-sm">{ev.verdicts.map((v) => <li key={v.n} className="border-b border-ink/15 pb-1.5"><b>N={v.n}:</b> {v.whichOk ? "✔" : "✘"} {v.note}{v.gapOk != null && (v.gapOk ? " Gap trend spotted correctly." : " The gap trend was actually different.")}</li>)}</ul>
             <div className="mt-4"><ConvergenceChart stats={s} /></div>
             <div className="mt-3 border-l-4 border-mustard bg-mustard/15 p-3 text-sm">
