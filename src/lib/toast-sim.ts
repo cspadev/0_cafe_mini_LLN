@@ -22,8 +22,22 @@ export function reviveSupply(supply: ToastSupply) {
   supply.revives++;
   return true;
 }
-export function finalScorePoints(score: number, revives: number) {
-  return Math.max(0, Math.round(score * 100) - revives * TOAST_CONFIG.stock.revivePenaltyPoints);
+export function finalScorePoints(correctRounds: number) {
+  return Math.round(correctRounds / TOAST_CONFIG.rounds.count * 100);
+}
+export type RoundResult = { round: number; correct: boolean; guess: Kind | null; odds: Odds; n: number; reason: "guess" | "test" };
+export function evaluateRound(round: number, guess: Kind | null, odds: Odds, n: number): RoundResult {
+  return { round, guess, odds: { ...odds }, n, correct: guess !== null && odds[guess] > odds[guess === "jam" ? "ham" : "jam"], reason: guess === null ? "test" : "guess" };
+}
+export const REVIVE_QUESTIONS = [
+  { question: "Which sample usually gives a more stable running average?", options: ["10 drops", "500 drops", "They are always equally stable"], correct: 1, explanation: "Larger samples usually give more stable averages." },
+  { question: "Jam is ahead after just 10 drops. What can you conclude?", options: ["Jam definitely has higher true odds", "Ham must catch up on the next drop", "The sample may be too small to decide"], correct: 2, explanation: "A small sample can be misleading; neither topping owes you a catch-up." },
+  { question: "As more drops land, the running average tends towards…", options: ["The topping’s true probability", "Exactly 50%, regardless of the odds", "100%, because Murphy says so"], correct: 0, explanation: "The Law of Large Numbers points to the true probability, not necessarily 50%." },
+] as const;
+export function evaluateReviveTest(answers: readonly number[]) {
+  const complete = answers.length === 3 && REVIVE_QUESTIONS.every((q, i) => Number.isInteger(answers[i]) && answers[i] >= 0 && answers[i] < q.options.length);
+  const correct = complete ? REVIVE_QUESTIONS.filter((q, i) => answers[i] === q.correct).length : 0;
+  return { complete, correct, passed: complete && correct >= 1 };
 }
 export function canOpenEmptyLab(supply: ToastSupply, burstCount: number, flightCount: number) {
   return supply.remaining === 0 && burstCount === 0 && flightCount === 0;
@@ -68,7 +82,8 @@ export type Odds = Record<Kind, number>;
 /** Secret odds stay fixed within one experiment, but change on the next. */
 export function createOdds(rng: () => number = Math.random): Odds {
   const low = Math.round(35 + rng() * 35) / 100;
-  const high = Math.min(0.9, low + Math.round(8 + rng() * 14) / 100);
+  const [min, max] = TOAST_CONFIG.rounds.gapPoints;
+  const high = Math.round((low * 100) + min + rng() * (max - min)) / 100;
   return rng() < 0.5 ? { jam: low, ham: high } : { jam: high, ham: low };
 }
 
