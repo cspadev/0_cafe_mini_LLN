@@ -609,7 +609,7 @@ export function ToastGame() {
   const score = finalScorePoints(results.filter(result => result.correct).length);
 
   return (
-    <div className="flex h-dvh min-h-[480px] flex-col overflow-hidden bg-paper text-ink">
+    <div className="flex h-dvh min-h-[360px] flex-col overflow-hidden bg-paper text-ink sm:min-h-[480px]">
       {/* Scene */}
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <div
@@ -622,15 +622,16 @@ export function ToastGame() {
             startHold();
           }}
           onPointerUp={stopHold}
+          onPointerCancel={stopHold}
           onPointerLeave={stopHold}
         >
           <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
         </div>
 
-        <header className="absolute inset-x-0 top-0 flex flex-wrap items-center justify-between gap-2 bg-paper/95 px-3 py-2 sm:px-5">
-          <h1 className="font-display text-sm sm:text-xl">MURPHY'S TOAST LAB</h1>
-          <nav className="flex items-center gap-1" aria-label="Game controls">
-            <span className="mr-2 text-xs font-bold" aria-label="Round score">ROUND {round}/3 · {score}%</span>
+        <header className="absolute inset-x-0 top-0 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 bg-paper/95 px-3 py-2 sm:flex sm:flex-wrap sm:justify-between sm:px-5">
+          <h1 className="font-display truncate text-xs sm:text-xl">MURPHY'S TOAST LAB</h1>
+          <nav className="flex shrink-0 items-center gap-0.5 sm:gap-1" aria-label="Game controls">
+            <span className="mr-1 text-[10px] font-bold sm:mr-2 sm:text-xs" aria-label="Round score">R{round}/3 · {score}%</span>
             <Button size="icon" variant="ghost" title="Guess / lab report" aria-label="Guess / lab report" onClick={() => { holding.current = false; reportRequested.current = true; flash(flights.current.length || bursts.current.length ? "LET THE TOAST SETTLE…" : "LAB REPORT"); }}><BookOpen /></Button>
             <Button size="icon" variant="ghost" title={soundOn ? "Mute sounds" : "Enable sounds"} aria-label={soundOn ? "Mute sounds" : "Enable sounds"} onClick={() => { const enabled = !soundOn; setSoundOn(enabled); const sound = audio.current; if (sound) { sound.enabled = enabled; if (enabled) void sound.unlock().then(() => sound.play("drop")); } }}>{soundOn ? <Volume2 /> : <VolumeX />}</Button>
             <Button size="icon" variant="ghost" title="Hose down courtyard" aria-label="Hose down courtyard" onClick={hose}><Droplets /></Button>
@@ -638,7 +639,7 @@ export function ToastGame() {
           </nav>
         </header>
 
-        <div className="pointer-events-none absolute bottom-4 right-4 rotate-2 bg-paper px-3 py-2 text-sm font-bold shadow-cut">
+        <div className="pointer-events-none absolute bottom-3 right-3 rotate-2 bg-paper px-2 py-1.5 text-xs font-bold shadow-cut sm:bottom-4 sm:right-4 sm:px-3 sm:py-2 sm:text-sm">
           <p className="font-display tabular-nums" aria-label="Toast stock">STOCK: {supply.current.remaining}</p>
           {supply.current.remaining > 0 ? <span className={handKind === "jam" ? "text-jam" : "text-ham"}>{handKind === "jam" ? "JAM TOAST" : "HAM TOAST"}</span> : <span>OUT OF TOAST!</span>}
         </div>
@@ -653,14 +654,14 @@ export function ToastGame() {
 
       </div>
 
-      <footer className="flex h-[118px] shrink-0 items-center gap-3 border-t-2 border-ink/20 bg-paper px-3 sm:gap-6 sm:px-5" aria-label="Live experiment averages">
-        <div className="w-[110px] shrink-0 sm:w-[160px]">
-          <p className="font-display text-sm">N = {N.toLocaleString()}</p>
-          <p className="text-[10px] font-semibold text-ink/60">TOPPING-DOWN</p>
-          {(["jam", "ham"] as const).map((kind) => <div key={kind} className="flex items-center gap-1.5">
-            <img src={kind === "jam" ? jamSrc : hamSrc} alt={`${kind} toast`} className="h-7 w-7 object-contain" />
-            <span className={`text-xs font-bold ${kind === "jam" ? "text-jam" : "text-plot-ham"}`}>{kind === "jam" ? "Jam" : "Ham"}</span>
-            <span className="ml-auto text-sm font-bold tabular-nums">{s[kind].n ? (rate(s[kind]) * 100).toFixed(1) + "%" : "—"}</span>
+      <footer className="flex h-[104px] shrink-0 items-center gap-2 border-t-2 border-ink/20 bg-paper px-2 sm:h-[118px] sm:gap-6 sm:px-5" aria-label="Live experiment averages">
+        <div className="w-[104px] shrink-0 sm:w-[160px]">
+          <p className="font-display text-xs sm:text-sm">N = {N.toLocaleString()}</p>
+          <p className="hidden text-[10px] font-semibold text-ink/60 sm:block">TOPPING-DOWN</p>
+          {(["jam", "ham"] as const).map((kind) => <div key={kind} className="flex items-center gap-1 sm:gap-1.5">
+            <img src={kind === "jam" ? jamSrc : hamSrc} alt={`${kind} toast`} className="h-5 w-5 object-contain sm:h-7 sm:w-7" />
+            <span className={`text-[10px] font-bold sm:text-xs ${kind === "jam" ? "text-jam" : "text-plot-ham"}`}>{kind === "jam" ? "Jam" : "Ham"}</span>
+            <span className="ml-auto text-xs font-bold tabular-nums sm:text-sm">{s[kind].n ? (rate(s[kind]) * 100).toFixed(1) + "%" : "—"}</span>
           </div>)}
         </div>
         <div className="min-w-0 flex-1"><ConvergenceChart stats={s} compact /></div>
