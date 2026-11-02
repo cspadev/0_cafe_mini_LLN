@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { BookOpen, RotateCcw, Volume2, VolumeX, Droplets } from "lucide-react";
 import { ToastAudio } from "@/lib/toast-audio";
 import { ComicStrip, INTRO_PANELS, OUTRO_PANELS } from "./ComicStory";
+import { t, formatNumber, formatPercent } from "@/i18n";
 import { createSupply, spendToast, rewardSupplyHit, reviveSupply, finalScorePoints, canOpenEmptyLab, evaluateRound, evaluateReviveTest, type RoundResult } from "@/lib/toast-sim";
 import { RoundLab } from "./RoundLab";
 
@@ -49,14 +50,20 @@ type Flight = {
 type Bubble = { text: string; x: number; y: number; t: number; big?: boolean };
 type Burst = { left: number; every: number; acc: number; around?: { x: number; y: number }; fromSky: boolean };
 
-const STUDENT_LINES = ["EWW!", "MY HOODIE!", "WHO DID THAT?!", "Not again…", "Murphy!!", "IN MY HAIR?"];
-const CHEF_LINES = ["MON DIEU!", "MY TRAY!", "AAARGH!", "SACRÉ TOAST!"];
 const depth = (y: number) => 0.35 + 0.9 * y;
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const studentImages = { student1: s1Src, student2: s2Src, student3: s3Src, student4: s4Src, student5: s5Src, student6: s6Src };
 
 
-export function ToastGame() {
+/** Final result for the host game: share of correctly guessed rounds and per-round details. */
+export type ToastSummary = {
+  correctRounds: number;
+  rounds: number;
+  results: { round: number; correct: boolean; guess: Kind | null; reason: "guess" | "test"; n: number; odds: { jam: number; ham: number } }[];
+};
+
+/** onFinish set = running inside the host game: the final screen offers "Continue" instead of a new experiment. */
+export function ToastGame({ onFinish }: { onFinish?: ((summary: ToastSummary) => void) | undefined } = {}) {
   const sceneRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgs = useRef<Record<string, HTMLImageElement>>({});
@@ -85,7 +92,7 @@ export function ToastGame() {
   const truckVisit = useRef(createTruckVisit());
   const actors = useRef<Actor[]>([
     { kind: "truck", img: truckSrc, x: TOAST_CONFIG.truck.outsideX, y: TOAST_CONFIG.truck.pathY, vx: -TOAST_CONFIG.truck.speed, hitT: 0, say: "", min: TOAST_CONFIG.truck.stopX, max: TOAST_CONFIG.truck.outsideX },
-    { kind: "chef", img: chefSrc, x: 0.45, y: 0.6, vx: 0.07, hitT: 0, say: "", min: 0.25, max: 0.8 },
+    { kind: "chef", img: chefSrc, x: TOAST_CONFIG.chef.x, y: TOAST_CONFIG.chef.y, vx: TOAST_CONFIG.chef.speed, hitT: 0, say: "", min: TOAST_CONFIG.chef.min, max: TOAST_CONFIG.chef.max },
     ...TOAST_CONFIG.students.map((student): Actor => ({ kind: "student", img: studentImages[student.image], x: student.x, ...TOAST_CONFIG.walkingPaths[student.path], vx: student.speed, hitT: 0, say: "" })),
   ]);
 
@@ -117,8 +124,9 @@ export function ToastGame() {
         tx = opts.around.x + rnd(-0.12, 0.12);
         ty = opts.around.y + rnd(-0.1, 0.1);
       } else {
-        tx = aim.current.x + rnd(-0.04, 0.04);
-        ty = aim.current.y + rnd(-0.04, 0.04);
+        const scatter = TOAST_CONFIG.throwing.aimScatter;
+        tx = aim.current.x + rnd(-scatter, scatter);
+        ty = aim.current.y + rnd(-scatter, scatter);
       }
       tx = Math.min(0.98, Math.max(0.02, tx));
       ty = Math.min(0.97, Math.max(0.25, ty));
@@ -127,12 +135,12 @@ export function ToastGame() {
       const turns = 1 + Math.floor(Math.random() * 3);
       flights.current.push({
         kind, down, sx, sy, ss: opts?.fromSky ? g.ts * 0.4 : g.ts, tx, ty, t: 0,
-        dur: rnd(0.9, 1.25), halfTurns: turns * 2 + (down ? 1 : 0), spin: rnd(-3, 3), bonus,
+        dur: rnd(...TOAST_CONFIG.throwing.flightSeconds), halfTurns: turns * 2 + (down ? 1 : 0), spin: rnd(-3, 3), bonus,
       });
       if (!bonus) {
         audio.current?.play("drop");
         const next: Kind = Math.random() < 0.5 ? "jam" : "ham";
-        hand.current = { kind: next, cooldown: 0.12 };
+        hand.current = { kind: next, cooldown: TOAST_CONFIG.throwing.reloadSeconds };
         setHandKind(next);
       }
       void h;
@@ -247,7 +255,7 @@ export function ToastGame() {
       const { w, h, dpr } = size.current;
       const gx = f.tx * w;
       const gy = f.ty * h;
-      const gs = h * 0.055 * depth(f.ty);
+      const gs = h * TOAST_CONFIG.throwing.groundSize * depth(f.ty);
       const gc = ground.current?.getContext("2d");
       if (gc) {
         gc.save();
@@ -285,23 +293,23 @@ export function ToastGame() {
         if (gx > ax - bw / 2 && gx < ax + bw / 2 && gy > ay - bh && gy < ay + 4) {
           if (a.kind === "student") {
             rewardSupplyHit(supply.current, "student");
-            a.hitT = 1.2;
+            a.hitT = TOAST_CONFIG.reactions.studentSeconds;
             audio.current?.play("student");
-            bubbles.current.push({ text: STUDENT_LINES[Math.floor(Math.random() * STUDENT_LINES.length)] ?? "EWW!", x: ax, y: ay - bh, t: 1.3 });
+            bubbles.current.push({ text: t.bubbles.student[Math.floor(Math.random() * t.bubbles.student.length)] ?? "", x: ax, y: ay - bh, t: 1.3 });
           } else if (a.kind === "chef") {
             rewardSupplyHit(supply.current, "chef");
-            a.hitT = 1.6;
+            a.hitT = TOAST_CONFIG.reactions.chefSeconds;
             audio.current?.play("chef");
-            bubbles.current.push({ text: CHEF_LINES[Math.floor(Math.random() * CHEF_LINES.length)] ?? "SACRÉ TOAST!", x: ax, y: ay - bh, t: 1.6, big: true });
-            flash(`+${TOAST_CONFIG.bonuses.chef} TOASTS IN STOCK!`);
+            bubbles.current.push({ text: t.bubbles.chef[Math.floor(Math.random() * t.bubbles.chef.length)] ?? "", x: ax, y: ay - bh, t: 1.6, big: true });
+            flash(t.banners.chefBonus(TOAST_CONFIG.bonuses.chef));
           } else if (a.kind === "truck" && !f.bonus) {
             const bonus = rewardTruckHit(truckVisit.current);
             if (!bonus) break;
-            a.hitT = 2;
+            a.hitT = TOAST_CONFIG.reactions.truckSeconds;
             audio.current?.play("truck");
-            bubbles.current.push({ text: "HONK!! CARGO DOOR!", x: ax, y: ay - bh, t: 2, big: true });
+            bubbles.current.push({ text: t.bubbles.truck, x: ax, y: ay - bh, t: 2, big: true });
             bursts.current.push({ left: bonus, every: TOAST_CONFIG.truck.dropIntervalSeconds, acc: 0, fromSky: true });
-            flash(`+${bonus} BULK BREAD DROP!`);
+            flash(t.banners.truckBonus(bonus));
           }
           break;
         }
@@ -318,7 +326,7 @@ export function ToastGame() {
         hand.current.cooldown -= dt;
         if (holding.current) {
           holdAcc.current += dt;
-          if (holdAcc.current >= 0.12) {
+          if (holdAcc.current >= TOAST_CONFIG.throwing.holdIntervalSeconds) {
             holdAcc.current = 0;
             launch(false);
           }
@@ -336,7 +344,7 @@ export function ToastGame() {
         // actors
         advanceTruck(truckVisit.current, dt);
         for (const a of actors.current) {
-          const panic = a.hitT > 0 ? 2.5 : 1;
+          const panic = a.hitT > 0 ? TOAST_CONFIG.reactions.panicSpeed : 1;
           if (a.kind === "truck") {
             a.x = truckVisit.current.x;
           } else {
@@ -362,7 +370,8 @@ export function ToastGame() {
       // draw
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
-      if (ground.current) ctx.drawImage(ground.current, 0, 0);
+      // A hidden scene (e.g. iframe not shown yet) has a 0×0 canvas; drawing it would throw and stop the loop.
+      if (ground.current && ground.current.width > 0 && ground.current.height > 0) ctx.drawImage(ground.current, 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const sorted = [...actors.current].sort((a, b) => a.y - b.y);
@@ -395,7 +404,7 @@ export function ToastGame() {
         const p = Math.pow(f.t, 1.5);
         const x = f.sx + (f.tx * w - f.sx) * p;
         const y = f.sy + (f.ty * h - f.sy) * p - Math.sin(Math.PI * f.t) * h * 0.08;
-        const gs = h * 0.055 * depth(f.ty);
+        const gs = h * TOAST_CONFIG.throwing.groundSize * depth(f.ty);
         const s = f.ss + (gs - f.ss) * p;
         const ang = f.halfTurns * Math.PI * f.t;
         const c = Math.cos(ang);
@@ -476,7 +485,7 @@ export function ToastGame() {
   function flash(text: string) {
     setBanner(text);
     if (flashTimer.current) clearTimeout(flashTimer.current);
-    flashTimer.current = setTimeout(() => setBanner(null), 1800);
+    flashTimer.current = setTimeout(() => setBanner(null), TOAST_CONFIG.bannerSeconds * 1000);
   }
 
   function checkMilestone() {
@@ -532,14 +541,14 @@ export function ToastGame() {
   const onPointerMove = (e: React.PointerEvent) => {
     const r = sceneRef.current?.getBoundingClientRect();
     if (!r) return;
-    aim.current = { x: (e.clientX - r.left) / r.width, y: Math.max(0.28, (e.clientY - r.top) / r.height) };
+    aim.current = { x: (e.clientX - r.left) / r.width, y: Math.max(TOAST_CONFIG.throwing.minAimY, (e.clientY - r.top) / r.height) };
   };
   const startHold = () => {
     if (introOpen || debrief || roundResult !== null || supply.current.remaining === 0 || paused.current || shouldDrainForNotebook(lab.current, stats.current.jam.n + stats.current.ham.n, seen.current, reportRequested.current)) return;
     void audio.current?.unlock();
     launch(false);
     holding.current = true;
-    holdAcc.current = -0.25;
+    holdAcc.current = TOAST_CONFIG.throwing.holdStartSeconds;
   };
   const stopHold = () => {
     holding.current = false;
@@ -606,7 +615,14 @@ export function ToastGame() {
   const N = s.jam.n + s.ham.n;
   const jr = rate(s.jam);
   const hr = rate(s.ham);
-  const score = finalScorePoints(results.filter(result => result.correct).length);
+  const correctRounds = results.filter(result => result.correct).length;
+  const score = finalScorePoints(correctRounds);
+  const totalRounds = TOAST_CONFIG.rounds.count;
+  const finish = () => onFinish?.({
+    correctRounds,
+    rounds: totalRounds,
+    results: results.map(({ round, correct, guess, reason, n, odds }) => ({ round, correct, guess, reason, n, odds: { ...odds } })),
+  });
 
   return (
     <div className="flex h-dvh min-h-[360px] flex-col overflow-hidden bg-paper text-ink sm:min-h-[480px]">
@@ -629,19 +645,19 @@ export function ToastGame() {
         </div>
 
         <header className="absolute inset-x-0 top-0 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 bg-paper/95 px-3 py-2 sm:flex sm:flex-wrap sm:justify-between sm:px-5">
-          <h1 className="font-display truncate text-xs sm:text-xl">MURPHY'S TOAST LAB</h1>
-          <nav className="flex shrink-0 items-center gap-0.5 sm:gap-1" aria-label="Game controls">
-            <span className="mr-1 text-[10px] font-bold sm:mr-2 sm:text-xs" aria-label="Round score">R{round}/3 · {score}%</span>
-            <Button size="icon" variant="ghost" title="Guess / lab report" aria-label="Guess / lab report" onClick={() => { holding.current = false; reportRequested.current = true; flash(flights.current.length || bursts.current.length ? "LET THE TOAST SETTLE…" : "LAB REPORT"); }}><BookOpen /></Button>
-            <Button size="icon" variant="ghost" title={soundOn ? "Mute sounds" : "Enable sounds"} aria-label={soundOn ? "Mute sounds" : "Enable sounds"} onClick={() => { const enabled = !soundOn; setSoundOn(enabled); const sound = audio.current; if (sound) { sound.enabled = enabled; if (enabled) void sound.unlock().then(() => sound.play("drop")); } }}>{soundOn ? <Volume2 /> : <VolumeX />}</Button>
-            <Button size="icon" variant="ghost" title="Hose down courtyard" aria-label="Hose down courtyard" onClick={hose}><Droplets /></Button>
-            <Button size="icon" variant="ghost" title="New experiment" aria-label="New experiment" onClick={resetAll}><RotateCcw /></Button>
+          <h1 className="font-display truncate text-xs sm:text-xl">{t.header.title}</h1>
+          <nav className="flex shrink-0 items-center gap-0.5 sm:gap-1" aria-label={t.header.controls}>
+            <span className="mr-1 text-[10px] font-bold sm:mr-2 sm:text-xs" aria-label={t.header.scoreLabel}>{t.header.score(round, totalRounds, score)}</span>
+            <Button size="icon" variant="ghost" title={t.header.labReport} aria-label={t.header.labReport} onClick={() => { holding.current = false; reportRequested.current = true; flash(flights.current.length || bursts.current.length ? t.banners.settle : t.banners.labReport); }}><BookOpen /></Button>
+            <Button size="icon" variant="ghost" title={soundOn ? t.header.mute : t.header.unmute} aria-label={soundOn ? t.header.mute : t.header.unmute} onClick={() => { const enabled = !soundOn; setSoundOn(enabled); const sound = audio.current; if (sound) { sound.enabled = enabled; if (enabled) void sound.unlock().then(() => sound.play("drop")); } }}>{soundOn ? <Volume2 /> : <VolumeX />}</Button>
+            <Button size="icon" variant="ghost" title={t.header.hose} aria-label={t.header.hose} onClick={hose}><Droplets /></Button>
+            {!onFinish && <Button size="icon" variant="ghost" title={t.header.newExperiment} aria-label={t.header.newExperiment} onClick={resetAll}><RotateCcw /></Button>}
           </nav>
         </header>
 
         <div className="pointer-events-none absolute bottom-3 right-3 rotate-2 bg-paper px-2 py-1.5 text-xs font-bold shadow-cut sm:bottom-4 sm:right-4 sm:px-3 sm:py-2 sm:text-sm">
-          <p className="font-display tabular-nums" aria-label="Toast stock">STOCK: {supply.current.remaining}</p>
-          {supply.current.remaining > 0 ? <span className={handKind === "jam" ? "text-jam" : "text-ham"}>{handKind === "jam" ? "JAM TOAST" : "HAM TOAST"}</span> : <span>OUT OF TOAST!</span>}
+          <p className="font-display tabular-nums" aria-label={t.stock.label}>{t.stock.count(supply.current.remaining)}</p>
+          {supply.current.remaining > 0 ? <span className={handKind === "jam" ? "text-jam" : "text-ham"}>{t.stock[handKind]}</span> : <span>{t.stock.empty}</span>}
         </div>
 
         {banner && (
@@ -654,56 +670,57 @@ export function ToastGame() {
 
       </div>
 
-      <footer className="flex h-[104px] shrink-0 items-center gap-2 border-t-2 border-ink/20 bg-paper px-2 sm:h-[118px] sm:gap-6 sm:px-5" aria-label="Live experiment averages">
+      <footer className="flex h-[104px] shrink-0 items-center gap-2 border-t-2 border-ink/20 bg-paper px-2 sm:h-[118px] sm:gap-6 sm:px-5" aria-label={t.footer.label}>
         <div className="w-[104px] shrink-0 sm:w-[160px]">
-          <p className="font-display text-xs sm:text-sm">N = {N.toLocaleString()}</p>
-          <p className="hidden text-[10px] font-semibold text-ink/60 sm:block">TOPPING-DOWN</p>
+          <p className="font-display text-xs sm:text-sm">N = {formatNumber(N)}</p>
+          <p className="hidden text-[10px] font-semibold text-ink/60 sm:block">{t.footer.toppingDown}</p>
           {(["jam", "ham"] as const).map((kind) => <div key={kind} className="flex items-center gap-1 sm:gap-1.5">
-            <img src={kind === "jam" ? jamSrc : hamSrc} alt={`${kind} toast`} className="h-5 w-5 object-contain sm:h-7 sm:w-7" />
-            <span className={`text-[10px] font-bold sm:text-xs ${kind === "jam" ? "text-jam" : "text-plot-ham"}`}>{kind === "jam" ? "Jam" : "Ham"}</span>
-            <span className="ml-auto text-xs font-bold tabular-nums sm:text-sm">{s[kind].n ? (rate(s[kind]) * 100).toFixed(1) + "%" : "—"}</span>
+            <img src={kind === "jam" ? jamSrc : hamSrc} alt={t.footer.toastAlt(t.kinds[kind])} className="h-5 w-5 object-contain sm:h-7 sm:w-7" />
+            <span className={`text-[10px] font-bold sm:text-xs ${kind === "jam" ? "text-jam" : "text-plot-ham"}`}>{t.kinds[kind]}</span>
+            <span className="ml-auto text-xs font-bold tabular-nums sm:text-sm">{s[kind].n ? formatPercent(rate(s[kind]), 1) : "—"}</span>
           </div>)}
         </div>
         <div className="min-w-0 flex-1"><ConvergenceChart stats={s} compact /></div>
       </footer>
-      {(milestone != null || reportOpen) && <RoundLab key={`${round}-${milestone}`} stats={s} round={round} empty={emptyLab} onContinue={continueRound} onGuess={finishRound} onTest={completeRevive} />}
+      {(milestone != null || reportOpen) && <RoundLab key={`${round}-${milestone}`} stats={s} round={round} rounds={totalRounds} empty={emptyLab} onContinue={continueRound} onGuess={finishRound} onTest={completeRevive} />}
       {roundResult && <div className="absolute inset-0 z-40 flex items-center justify-center bg-ink/70 p-4">
-        <section role="dialog" aria-modal="true" aria-label="Round result" className="w-full max-w-xl border-4 border-ink bg-paper p-5 shadow-cut">
-          <p className="font-display text-sm text-jam">ROUND {roundResult.round} / 3</p>
-          <h2 className="font-display mt-2 text-2xl">{roundResult.correct ? "Right topping. Nice science!" : "This round is lost."}</h2>
-          <p className="mt-3 text-sm">{roundResult.reason === "test" ? "None of the three lab answers were correct." : `You guessed ${roundResult.guess === "jam" ? "Jam" : "Ham"}.`} True odds: Jam {(roundResult.odds.jam * 100).toFixed(0)}% · Ham {(roundResult.odds.ham * 100).toFixed(0)}%, after {roundResult.n} observations.</p>
-          <p className="mt-2 font-bold">{roundResult.correct ? "+⅓ of the total score" : "+0 points"} · Score: {score}%</p>
-          <Button className="mt-4 w-full bg-jam text-paper hover:bg-jam/90" onClick={nextRound}>{round === 3 ? "See final evaluation" : `Start round ${round + 1}`}</Button>
+        <section role="dialog" aria-modal="true" aria-label={t.result.dialog} className="w-full max-w-xl border-4 border-ink bg-paper p-5 shadow-cut">
+          <p className="font-display text-sm text-jam">{t.result.kicker(roundResult.round, totalRounds)}</p>
+          <h2 className="font-display mt-2 text-2xl">{roundResult.correct ? t.result.titleCorrect : t.result.titleLost}</h2>
+          <p className="mt-3 text-sm">{roundResult.reason === "test" || !roundResult.guess ? t.result.testFailed : t.result.guessed(t.kinds[roundResult.guess])} {t.result.trueOdds(formatPercent(roundResult.odds.jam), formatPercent(roundResult.odds.ham), roundResult.n)}</p>
+          <p className="mt-2 font-bold">{roundResult.correct ? t.result.gainCorrect(totalRounds) : t.result.gainNone} · {t.result.score(score)}</p>
+          <Button className="mt-4 w-full bg-jam text-paper hover:bg-jam/90" onClick={nextRound}>{round === totalRounds ? t.result.seeFinal : t.result.nextRound(round + 1)}</Button>
         </section>
       </div>}
       {introOpen && <div className="absolute inset-0 z-40 overflow-y-auto bg-ink/70 p-4">
-        <section role="dialog" aria-modal="true" aria-label="Before you start" className="mx-auto max-w-3xl border-4 border-ink bg-paper p-5 shadow-cut">
-          <p className="font-display text-sm text-jam">TODAY'S EXPERIMENT</p>
-          <h2 className="font-display text-2xl leading-tight sm:text-3xl">Two laws walk into a courtyard…</h2>
-          <p className="mt-2 text-sm">Only one of them can be trusted. Let's test both — with science, a balcony and a <i>lot</i> of toast.</p>
+        <section role="dialog" aria-modal="true" aria-label={t.intro.dialog} className="mx-auto max-w-3xl border-4 border-ink bg-paper p-5 shadow-cut">
+          <p className="font-display text-sm text-jam">{t.intro.kicker}</p>
+          <h2 className="font-display text-2xl leading-tight sm:text-3xl">{t.intro.title}</h2>
+          <p className="mt-2 text-sm">{t.intro.lead}</p>
           <div className="mt-4"><ComicStrip panels={INTRO_PANELS} /></div>
           <div className="mt-5 border-l-4 border-mustard bg-mustard/15 p-3 text-sm">
-            <b>Your mission:</b> three rounds, three chances to spot the unluckier topping. Each round starts with 30 toasts and new secret odds just 3–8 percentage points apart. Students return one toast per hit; the chef adds 20. The truck unleashes a 50-toast armageddon! A correct final guess earns ⅓ of your score; a wrong guess loses the round. At early checkpoints, guess now or collect more data. Out of toast? Guess, or answer a three-question lab test: one correct answer earns 30 more toasts, no penalty. Zero correct loses the round.
-
+            {t.intro.mission}
           </div>
-          <Button className="font-display mt-4 w-full border-4 border-ink bg-jam py-5 text-lg text-paper shadow-cut hover:bg-jam/90" onClick={() => { setIntroOpen(false); const sound = audio.current; if (sound) void sound.unlock().then(() => sound.play("drop")); }}>START THE EXPERIMENT</Button>
+          <Button className="font-display mt-4 w-full border-4 border-ink bg-jam py-5 text-lg text-paper shadow-cut hover:bg-jam/90" onClick={() => { setIntroOpen(false); const sound = audio.current; if (sound) void sound.unlock().then(() => sound.play("drop")); }}>{t.intro.start}</Button>
         </section>
       </div>}
       {debrief && (() => {
         const pct = score;
         return <div className="absolute inset-0 z-40 overflow-y-auto bg-ink/70 p-4">
-          <section role="dialog" aria-modal="true" aria-label="Experiment evaluation" className="mx-auto max-w-3xl border-4 border-ink bg-paper p-5 shadow-cut">
-            <p className="font-display text-sm text-jam">EXPERIMENT EVALUATION · N = {N.toLocaleString()}</p>
-            <h2 className="font-display text-2xl leading-tight sm:text-3xl">{pct >= 75 ? "Certified Toast Scientist!" : pct >= 45 ? "Promising Crumb Researcher" : "Murphy got you this time…"}</h2>
-            <p className="mt-2 text-sm font-bold">Final score: {pct}% · {results.filter(result => result.correct).length}/3 correct rounds · No revive penalties.</p>
-            <ul className="mt-3 space-y-2 text-sm">{results.map(result => <li key={result.round} className="border-b border-ink/15 pb-2"><b>Round {result.round}:</b> {result.correct ? "✓ Correct guess · +⅓" : result.reason === "test" ? "✗ Revival test failed · +0" : "✗ Wrong guess · +0"} · N={result.n} · True Jam {(result.odds.jam * 100).toFixed(0)}% / Ham {(result.odds.ham * 100).toFixed(0)}%</li>)}</ul>
+          <section role="dialog" aria-modal="true" aria-label={t.debrief.dialog} className="mx-auto max-w-3xl border-4 border-ink bg-paper p-5 shadow-cut">
+            <p className="font-display text-sm text-jam">{t.debrief.kicker(formatNumber(N))}</p>
+            <h2 className="font-display text-2xl leading-tight sm:text-3xl">{pct >= TOAST_CONFIG.debrief.topPercent ? t.debrief.titleTop : pct >= TOAST_CONFIG.debrief.midPercent ? t.debrief.titleMid : t.debrief.titleLow}</h2>
+            <p className="mt-2 text-sm font-bold">{t.debrief.summary(pct, correctRounds, totalRounds)}</p>
+            <ul className="mt-3 space-y-2 text-sm">{results.map(result => <li key={result.round} className="border-b border-ink/15 pb-2"><b>{t.debrief.round(result.round)}</b> {result.correct ? t.debrief.roundCorrect(totalRounds) : result.reason === "test" ? t.debrief.roundTestFailed : t.debrief.roundWrong} · {t.debrief.roundOdds(result.n, formatPercent(result.odds.jam), formatPercent(result.odds.ham))}</li>)}</ul>
             <div className="mt-4"><ConvergenceChart stats={s} /></div>
             <div className="mt-3 border-l-4 border-mustard bg-mustard/15 p-3 text-sm">
-              <b>What happened?</b> At first the lines jumped all over the place — a few lucky bounces could make either topping look cursed. As N grew, each new toast moved the average less and the lines <b>converged</b> towards the true probabilities. That's the Law of Large Numbers: you need <b>enough observations</b> before you can decide with reasonable certainty. And Murphy? Toast doesn't <i>always</i> land topping-down — it just happens often enough to feel personal.
+              {t.debrief.explanation}
             </div>
-            <h3 className="font-display mt-6 text-xl">But wait — is real toast cursed?</h3>
+            <h3 className="font-display mt-6 text-xl">{t.debrief.outroTitle}</h3>
             <div className="mt-3"><ComicStrip panels={OUTRO_PANELS} /></div>
-            <Button className="font-display mt-5 w-full border-4 border-ink bg-jam py-5 text-lg text-paper shadow-cut hover:bg-jam/90" onClick={() => { setDebrief(false); resetAll(); }}>NEW EXPERIMENT (NEW SECRET ODDS)</Button>
+            {onFinish
+              ? <Button className="font-display mt-5 w-full border-4 border-ink bg-jam py-5 text-lg text-paper shadow-cut hover:bg-jam/90" onClick={finish}>{t.debrief.finish}</Button>
+              : <Button className="font-display mt-5 w-full border-4 border-ink bg-jam py-5 text-lg text-paper shadow-cut hover:bg-jam/90" onClick={() => { setDebrief(false); resetAll(); }}>{t.debrief.newExperiment}</Button>}
           </section>
         </div>;
       })()}

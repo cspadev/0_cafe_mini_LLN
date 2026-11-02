@@ -29,18 +29,16 @@ export type RoundResult = { round: number; correct: boolean; guess: Kind | null;
 export function evaluateRound(round: number, guess: Kind | null, odds: Odds, n: number): RoundResult {
   return { round, guess, odds: { ...odds }, n, correct: guess !== null && odds[guess] > odds[guess === "jam" ? "ham" : "jam"], reason: guess === null ? "test" : "guess" };
 }
-export const REVIVE_QUESTIONS = [
-  { question: "Which sample usually gives a more stable running average?", options: ["10 drops", "500 drops", "They are always equally stable"], correct: 1, explanation: "Larger samples usually give more stable averages." },
-  { question: "Jam is ahead after just 10 drops. What can you conclude?", options: ["Jam definitely has higher true odds", "Ham must catch up on the next drop", "The sample may be too small to decide"], correct: 2, explanation: "A small sample can be misleading; neither topping owes you a catch-up." },
-  { question: "As more drops land, the running average tends towards…", options: ["The topping’s true probability", "Exactly 50%, regardless of the odds", "100%, because Murphy says so"], correct: 0, explanation: "The Law of Large Numbers points to the true probability, not necessarily 50%." },
-] as const;
+/** Every revive question has this many options (texts in src/i18n). */
+export const REVIVE_OPTION_COUNT = 3;
 export function evaluateReviveTest(answers: readonly number[]) {
-  const complete = answers.length === 3 && REVIVE_QUESTIONS.every((q, i) => {
+  const key = TOAST_CONFIG.revive.answerKey;
+  const complete = answers.length === key.length && key.every((_, i) => {
     const answer = answers[i];
-    return answer !== undefined && Number.isInteger(answer) && answer >= 0 && answer < q.options.length;
+    return answer !== undefined && Number.isInteger(answer) && answer >= 0 && answer < REVIVE_OPTION_COUNT;
   });
-  const correct = complete ? REVIVE_QUESTIONS.filter((q, i) => answers[i] === q.correct).length : 0;
-  return { complete, correct, passed: complete && correct >= 1 };
+  const correct = complete ? key.filter((c, i) => answers[i] === c).length : 0;
+  return { complete, correct, passed: complete && correct >= TOAST_CONFIG.revive.minCorrect };
 }
 export function canOpenEmptyLab(supply: ToastSupply, burstCount: number, flightCount: number) {
   return supply.remaining === 0 && burstCount === 0 && flightCount === 0;
@@ -84,7 +82,8 @@ export type Odds = Record<Kind, number>;
 
 /** Secret odds stay fixed within one experiment, but change on the next. */
 export function createOdds(rng: () => number = Math.random): Odds {
-  const low = Math.round(35 + rng() * 35) / 100;
+  const [lowMin, lowMax] = TOAST_CONFIG.rounds.oddsLowPercent;
+  const low = Math.round(lowMin + rng() * (lowMax - lowMin)) / 100;
   const [min, max] = TOAST_CONFIG.rounds.gapPoints;
   const high = Math.round((low * 100) + min + rng() * (max - min)) / 100;
   return rng() < 0.5 ? { jam: low, ham: high } : { jam: high, ham: low };
@@ -94,7 +93,7 @@ export function canOpenNotebook(lab: boolean, burstCount: number, flightCount: n
   return lab && burstCount === 0 && flightCount === 0 && !holding;
 }
 
-export const MILESTONES = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000];
+export const MILESTONES = TOAST_CONFIG.milestones;
 
 /** Stop normal launches at a due checkpoint, then let every existing flight/burst settle. */
 export function shouldDrainForNotebook(lab: boolean, n: number, seen: ReadonlySet<number>, reportRequested = false) {
